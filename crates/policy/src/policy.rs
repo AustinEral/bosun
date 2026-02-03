@@ -74,6 +74,21 @@ impl Policy {
         toml::from_str(toml).map_err(|e| Error::Parse(e.to_string()))
     }
 
+    /// Create a permissive policy (allow everything).
+    /// Only use for testing!
+    pub fn permissive() -> Self {
+        Self {
+            allow: AllowRules {
+                fs_read: vec!["**".to_string()],
+                fs_write: vec!["**".to_string()],
+                net_http: vec!["*".to_string()],
+                exec: vec!["*".to_string()],
+                secrets_read: vec!["*".to_string()],
+            },
+            deny: DenyRules::default(),
+        }
+    }
+
     /// Create a default restrictive policy (deny all side effects).
     pub fn restrictive() -> Self {
         let mut deny_all = HashSet::new();
