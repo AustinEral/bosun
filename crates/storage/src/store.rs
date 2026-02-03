@@ -135,7 +135,11 @@ impl EventStore {
     }
 
     /// Load events for a session, optionally filtering by kind.
-    pub fn load_events(&self, session_id: SessionId, kind_filter: Option<&str>) -> Result<Vec<Event>> {
+    pub fn load_events(
+        &self,
+        session_id: SessionId,
+        kind_filter: Option<&str>,
+    ) -> Result<Vec<Event>> {
         let sql = match kind_filter {
             Some(_) => {
                 "SELECT id, session_id, timestamp, data FROM events 

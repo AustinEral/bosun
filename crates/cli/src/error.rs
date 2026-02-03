@@ -12,7 +12,10 @@ pub enum Error {
     SessionNotFound { prefix: String },
 
     #[error("multiple sessions match '{prefix}': {matches:?}")]
-    AmbiguousSession { prefix: String, matches: Vec<String> },
+    AmbiguousSession {
+        prefix: String,
+        matches: Vec<String>,
+    },
 
     #[error("ANTHROPIC_API_KEY not set")]
     MissingApiKey,
