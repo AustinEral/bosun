@@ -222,7 +222,125 @@ let config = ConfigBuilder::new()
 
 ---
 
-## 4. Strategy Pattern
+## 4. Decoupled Design
+
+Design components to be independent, replaceable, and testable in isolation.
+
+### Ownership Over References (When Practical)
+
+When you pass owned values, the receiver is independent of the caller's lifetime.
+
+```rust
+// More coupled: receiver depends on caller's lifetime
+fn process(config: &Config) -> Processor { 
+    Processor { config }  // Can't store without lifetime param
+}
+
+// More decoupled: receiver owns the data
+fn process(config: Config) -> Processor { 
+    Processor { config }  // Clean ownership, no lifetime coupling
+}
+```
+
+Trade-off: may require cloning. Often worth it for cleaner boundaries between components.
+
+### Depend on Traits, Not Implementations
+
+```rust
+// Coupled: directly depends on concrete type
+struct Runtime {
+    storage: SqliteStorage,
+}
+
+// Decoupled: depends on trait, any implementation works
+struct Runtime<S: Storage> {
+    storage: S,
+}
+
+// Even more flexible: trait objects when you need runtime polymorphism
+struct Runtime {
+    storage: Box<dyn Storage>,
+}
+```
+
+### Small, Focused Traits (Interface Segregation)
+
+Don't force implementors to provide functionality they don't need.
+
+```rust
+// Bad: one big trait, must implement everything
+trait Agent {
+    fn run(&mut self);
+    fn store(&mut self, event: Event);
+    fn search(&self, query: &str) -> Vec<Memory>;
+    fn invoke_tool(&self, name: &str) -> Result<Value>;
+}
+
+// Good: small traits, depend only on what you need
+trait Runner { fn run(&mut self); }
+trait EventStore { fn store(&mut self, event: Event); }
+trait Searchable { fn search(&self, query: &str) -> Vec<Memory>; }
+```
+
+### Dependency Injection
+
+Pass dependencies in rather than creating them internally.
+
+```rust
+// Coupled: creates its own dependencies internally
+impl Runtime {
+    fn new() -> Self {
+        Runtime {
+            storage: SqliteStorage::new("agent.db"),  // Hardcoded
+            adapter: AnthropicAdapter::new(),         // Hardcoded
+        }
+    }
+}
+
+// Decoupled: dependencies injected
+impl<S: Storage, A: LlmAdapter> Runtime<S, A> {
+    fn new(storage: S, adapter: A) -> Self {
+        Runtime { storage, adapter }
+    }
+}
+```
+
+Benefits:
+- Swap implementations easily (test doubles, alternative backends)
+- Components testable in isolation
+- Configuration lives at the edges, not buried inside
+
+### One-Way Dependencies (Layered Architecture)
+
+Lower layers must not depend on higher layers. Dependencies flow one direction.
+
+```
+cli     → runtime → storage
+                  → llm
+                  → policy
+
+Never: storage → runtime (creates cycle)
+```
+
+Rust enforces this at the crate level. Follow it within crates too.
+
+### Message Passing at Boundaries
+
+Between major components, prefer messages (events, commands) over direct method calls.
+
+```rust
+// Coupled: direct call, tight binding
+runtime.session_manager.create_session(channel_id);
+
+// Decoupled: message-based, components don't know each other
+event_bus.send(Command::CreateSession { channel_id });
+```
+
+This makes components replaceable and enables async processing.
+
+---
+
+## 5. Strategy Pattern
 
 When behavior varies based on a type, avoid scattering conditionals. Use **enum dispatch** or **trait-based strategies**.
 
@@ -321,7 +439,7 @@ let model = if provider == "anthropic" { "claude" } else { "gpt-4" };
 
 ---
 
-## 5. Complexity Management
+## 6. Complexity Management
 
 ### Prefer Early Returns
 
@@ -382,7 +500,7 @@ mod common;
 
 ---
 
-## 6. Error Handling
+## 7. Error Handling
 
 ### Custom Error Types
 
@@ -439,7 +557,7 @@ let value = map.get(key).expect("key must exist");  // Use Result
 
 ---
 
-## 7. Concurrency
+## 8. Concurrency
 
 ### Prefer Message Passing
 
@@ -486,7 +604,7 @@ let permit = permits.acquire().await?;
 
 ---
 
-## 8. Documentation
+## 9. Documentation
 
 ### What to Document
 
@@ -532,7 +650,7 @@ pub fn invoke(&self, name: &str, params: Value) -> Result<Value>
 
 ---
 
-## 9. Testing
+## 10. Testing
 
 ### Don't Test What Rust Enforces
 
@@ -630,7 +748,7 @@ tests/
 
 ---
 
-## 10. Project Structure
+## 11. Project Structure
 
 ### Crate Layout
 
@@ -665,7 +783,7 @@ pub use error::{Error, Result};
 
 ---
 
-## 11. Anti-Patterns
+## 12. Anti-Patterns
 
 ### Boolean Blindness
 
@@ -714,7 +832,7 @@ impl Session {
 
 ---
 
-## 12. Code Review Checklist
+## 13. Code Review Checklist
 
 - [ ] Public APIs have documentation
 - [ ] Error cases return `Result` (not `panic!`)
