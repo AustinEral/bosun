@@ -1,14 +1,17 @@
+mod config;
 mod error;
 
 use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use chrono::{Local, TimeZone};
 use clap::{Parser, Subcommand};
 use policy::Policy;
-use runtime::{Session, llm::Client};
+use runtime::{llm::Client, Session, ToolHost};
 use storage::{Event, EventKind, EventStore, Role};
 
+use config::Config;
 use error::{Error, Result};
 
 const SYSTEM_PROMPT: &str = "You are Bosun, a helpful AI assistant. Be concise and direct.";
@@ -87,8 +90,18 @@ async fn cmd_chat() -> Result<()> {
         }
     );
 
-    // Create session (no tools for now - will add MCP config loading later)
-    let mut session = Session::new_simple(store, client, policy)?.with_system(SYSTEM_PROMPT);
+    // Load MCP servers from config
+    let tool_host = load_mcp_servers().await?;
+    let tool_count = tool_host.list_tools().await.len();
+    if tool_count > 0 {
+        println!("Tools: {} available", tool_count);
+    }
+
+    // Create session
+    let mut session = Session::new(store, client, policy, Arc::new(tool_host))?
+        .with_system(SYSTEM_PROMPT);
+    session.load_tools().await?;
+    
     println!("Session ID: {}", session.id);
     println!("Type 'quit' or Ctrl+D to exit.\n");
 
@@ -286,4 +299,25 @@ fn load_policy() -> Result<Policy> {
     } else {
         Ok(Policy::restrictive())
     }
+}
+
+async fn load_mcp_servers() -> Result<ToolHost> {
+    let config_path = PathBuf::from(POLICY_FILE);
+
+    if !config_path.exists() {
+        return Ok(ToolHost::empty());
+    }
+
+    let config = Config::load(&config_path)?;
+    let server_configs = config.mcp_servers();
+
+    if server_configs.is_empty() {
+        return Ok(ToolHost::empty());
+    }
+
+    println!("Loading {} MCP server(s)...", server_configs.len());
+    let host = ToolHost::new(server_configs);
+    host.initialize().await.map_err(|e| Error::Runtime(e))?;
+
+    Ok(host)
 }
