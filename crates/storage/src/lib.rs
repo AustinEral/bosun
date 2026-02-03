@@ -6,4 +6,4 @@ mod store;
 
 pub use error::{Error, Result};
 pub use event::{Event, EventKind, Role, SessionId};
-pub use store::EventStore;
+pub use store::{EventStore, SessionSummary};

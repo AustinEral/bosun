@@ -13,3 +13,6 @@ runtime = { path = "../runtime" }
 storage = { path = "../storage" }
 policy = { path = "../policy" }
 tokio.workspace = true
+clap = { version = "4", features = ["derive"] }
+chrono.workspace = true
+thiserror.workspace = true
