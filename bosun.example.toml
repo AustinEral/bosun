@@ -1,0 +1,36 @@
+# Bosun Policy Configuration
+#
+# This file controls what capabilities the agent has.
+# Copy to `bosun.toml` and customize.
+
+[allow]
+# File system read access (glob patterns)
+fs_read = [
+    ".",        # Current directory
+    "/tmp/**",  # Temp files
+]
+
+# File system write access (glob patterns)
+fs_write = [
+    ".",        # Current directory
+]
+
+# Allowed HTTP domains
+net_http = [
+    "api.anthropic.com",
+    # Add domains as needed
+]
+
+# Allowed commands (empty = none allowed)
+exec = [
+    # "git",    # Uncomment to allow git commands
+    # "cargo",  # Uncomment to allow cargo commands
+]
+
+# Allowed secret keys
+secrets_read = []
+
+[deny]
+# Capabilities to deny outright (overrides allow)
+# Options: fs_read, fs_write, net_http, exec, secrets_read
+all = ["exec"]  # Deny all exec by default

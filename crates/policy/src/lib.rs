@@ -4,6 +4,8 @@
 
 mod capability;
 mod error;
+mod policy;
 
-pub use capability::Capability;
+pub use capability::{CapabilityKind, CapabilityRequest};
 pub use error::{Error, Result};
+pub use policy::{Decision, Policy};
