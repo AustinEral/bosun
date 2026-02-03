@@ -148,6 +148,31 @@ fn into_iter(self) -> IntoIter<T>
 
 ## 3. Types & Structures
 
+### Make Invalid States Unrepresentable
+
+Design types so that invalid states cannot be constructed. Let the compiler enforce invariants.
+
+```rust
+// Good: state machine as enum — only valid transitions possible
+pub enum Session {
+    Active(ActiveSession),
+    Ended(EndedSession),
+}
+
+impl ActiveSession {
+    pub fn end(self, reason: EndReason) -> EndedSession {
+        // Consumes self, returns ended state
+    }
+}
+
+// Bad: invalid states are representable
+pub struct Session {
+    is_active: bool,
+    is_ended: bool,      // Can both be true? Both false?
+    end_reason: Option<EndReason>,  // Required when ended, but Option allows None
+}
+```
+
 ### Domain Modeling with Enums
 
 Use enums to represent domain concepts with finite valid values.
@@ -508,6 +533,56 @@ pub fn invoke(&self, name: &str, params: Value) -> Result<Value>
 ---
 
 ## 9. Testing
+
+### Don't Test What Rust Enforces
+
+Rust's type system already guarantees many things at compile time. Don't write tests for:
+
+- Type correctness (the compiler checks this)
+- Exhaustive match arms (the compiler checks this)
+- Ownership and borrowing rules
+- Null safety (there is no null)
+- Thread safety of `Send`/`Sync` types
+
+```rust
+// Bad: testing what the compiler guarantees
+#[test]
+fn session_id_is_copy() {
+    let id = SessionId::new();
+    let copy = id;  // If this compiles, it's Copy
+    assert_eq!(id, copy);  // Pointless test
+}
+
+// Bad: testing type constraints
+#[test]
+fn config_requires_model() {
+    // If Config has `model: String` (not Option), 
+    // you can't construct it without one. No test needed.
+}
+```
+
+**Do test:**
+- Business logic and algorithms
+- Edge cases and boundary conditions
+- Error handling paths
+- Integration between components
+- Behavior that the type system can't express
+
+```rust
+// Good: testing actual logic
+#[test]
+fn token_budget_reserves_space_for_response() {
+    let budget = TokenBudget::new(8000, 1000);  // max, reserved
+    assert_eq!(budget.available_for_context(), 7000);
+}
+
+// Good: testing edge cases
+#[test]
+fn empty_tool_list_returns_empty_result() {
+    let host = ToolHost::new(vec![]);
+    assert!(host.list_tools().is_empty());
+}
+```
 
 ### Unit Tests in Same File
 
