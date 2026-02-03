@@ -529,7 +529,7 @@ pub enum Error {
 pub type Result<T> = std::result::Result<T, Error>;
 ```
 
-`anyhow` is acceptable only in the final binary (CLI) for top-level error handling, but prefer typed errors throughout.
+**Do not use `anyhow`** — prefer concrete error types everywhere, including the CLI. Typed errors are easier to handle programmatically and provide better diagnostics.
 
 ### Descriptive Error Messages
 

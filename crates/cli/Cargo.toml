@@ -15,4 +15,4 @@ policy = { path = "../policy" }
 tokio.workspace = true
 clap = { version = "4", features = ["derive"] }
 chrono.workspace = true
-anyhow = "1"
+thiserror.workspace = true

@@ -1,12 +1,15 @@
+mod error;
+
 use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
 
-use anyhow::{Context, Result, bail};
 use chrono::{Local, TimeZone};
 use clap::{Parser, Subcommand};
 use policy::Policy;
 use runtime::{Session, llm::Client};
-use storage::{Event, EventKind, EventStore, Role, SessionId};
+use storage::{Event, EventKind, EventStore, Role};
+
+use error::{Error, Result};
 
 const SYSTEM_PROMPT: &str = "You are Bosun, a helpful AI assistant. Be concise and direct.";
 const POLICY_FILE: &str = "bosun.toml";
@@ -63,8 +66,7 @@ async fn cmd_chat() -> Result<()> {
     println!("bosun v{}", env!("CARGO_PKG_VERSION"));
 
     // Initialize LLM client
-    let client = Client::from_env()
-        .context("Set ANTHROPIC_API_KEY environment variable to use bosun")?;
+    let client = Client::from_env().map_err(|_| Error::MissingApiKey)?;
 
     // Initialize event store
     let data_dir = dirs_data_dir().unwrap_or_else(|| ".bosun".into());
@@ -172,14 +174,17 @@ fn cmd_logs(session_prefix: &str, kind_filter: Option<&str>) -> Result<()> {
         .collect();
 
     let session_id = match matching.len() {
-        0 => bail!("No session found matching '{session_prefix}'"),
+        0 => {
+            return Err(Error::SessionNotFound {
+                prefix: session_prefix.to_string(),
+            });
+        }
         1 => matching[0].id,
         _ => {
-            eprintln!("Multiple sessions match '{session_prefix}'. Be more specific:");
-            for s in matching {
-                eprintln!("  {}", s.id);
-            }
-            std::process::exit(1);
+            return Err(Error::AmbiguousSession {
+                prefix: session_prefix.to_string(),
+                matches: matching.iter().map(|s| s.id.to_string()).collect(),
+            });
         }
     };
 
@@ -239,7 +244,7 @@ fn open_store() -> Result<EventStore> {
     let db_path = data_dir.join("events.db");
 
     if !db_path.exists() {
-        bail!("No database found at {}. Run 'bosun chat' first.", db_path.display());
+        return Err(Error::DatabaseNotFound { path: db_path });
     }
 
     Ok(EventStore::open(&db_path)?)
@@ -273,7 +278,6 @@ fn load_policy() -> Result<Policy> {
     if policy_path.exists() {
         Ok(Policy::load(&policy_path)?)
     } else {
-        // Use default restrictive policy
         Ok(Policy::restrictive())
     }
 }
