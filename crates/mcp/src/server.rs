@@ -57,19 +57,15 @@ impl Server {
 
         let mut process = cmd.spawn()?;
 
-        let stdin = process.stdin.take().ok_or_else(|| {
-            Error::Spawn(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "failed to capture stdin",
-            ))
-        })?;
+        let stdin = process
+            .stdin
+            .take()
+            .ok_or_else(|| Error::Spawn(std::io::Error::other("failed to capture stdin")))?;
 
-        let stdout = process.stdout.take().ok_or_else(|| {
-            Error::Spawn(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "failed to capture stdout",
-            ))
-        })?;
+        let stdout = process
+            .stdout
+            .take()
+            .ok_or_else(|| Error::Spawn(std::io::Error::other("failed to capture stdout")))?;
 
         Ok(Self {
             config,
@@ -231,7 +227,7 @@ impl Server {
         let notification = serde_json::json!({
             "jsonrpc": "2.0",
             "method": method,
-            "params": params.map(|p| serde_json::to_value(p).ok()).flatten()
+            "params": params.and_then(|p| serde_json::to_value(p).ok())
         });
 
         let notification_json = serde_json::to_string(&notification)?;
