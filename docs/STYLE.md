@@ -45,6 +45,8 @@ Build only what's required now. Don't add functionality based on speculation.
 - ❌ Don't add features "just in case"
 - ✅ Minimal stubs marked clearly as future work
 - ❌ Don't build full APIs before they're needed
+- ✅ Add dependencies only when you use them
+- ❌ Don't pre-add dependencies "we'll need later"
 
 ### All Side Effects Require Explicit Capability
 
@@ -504,6 +506,8 @@ mod common;
 
 ### Custom Error Types
 
+Use `thiserror` for defining errors. **Do not use `anyhow`** in library crates — it erases type information and makes errors harder to handle.
+
 ```rust
 use thiserror::Error;
 
@@ -524,6 +528,8 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 ```
+
+`anyhow` is acceptable only in the final binary (CLI) for top-level error handling, but prefer typed errors throughout.
 
 ### Descriptive Error Messages
 
