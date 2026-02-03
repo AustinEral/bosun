@@ -7,4 +7,4 @@ mod tools;
 
 pub use error::{Error, Result};
 pub use session::Session;
-pub use tools::{RegisteredTool, ToolHost};
+pub use tools::ToolHost;

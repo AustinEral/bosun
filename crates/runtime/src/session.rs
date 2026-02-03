@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
-use crate::llm::{Client, ContentBlock, LlmResponse, Message, ToolDefinition};
-use crate::tools::ToolHost;
+use crate::llm::{Client, Message};
+use crate::tools::{RegisteredTool, ToolHost};
 use crate::{Error, Result};
 use policy::{CapabilityRequest, Decision, Policy};
 use serde_json::Value;
@@ -11,6 +11,10 @@ use storage::{Event, EventKind, EventStore, Role, SessionId};
 
 /// Maximum tool iterations per run to prevent infinite loops.
 const MAX_TOOL_ITERATIONS: usize = 10;
+
+/// Tool call pattern for runtime-based tool execution.
+const TOOL_CALL_START: &str = "<tool_call>";
+const TOOL_CALL_END: &str = "</tool_call>";
 
 /// A conversation session with tool support.
 pub struct Session {
@@ -21,7 +25,7 @@ pub struct Session {
     tool_host: Arc<ToolHost>,
     messages: Vec<Message>,
     system: Option<String>,
-    tools: Vec<ToolDefinition>,
+    tools: Vec<RegisteredTool>,
 }
 
 impl Session {
@@ -61,14 +65,41 @@ impl Session {
 
     /// Load tools from the tool host.
     pub async fn load_tools(&mut self) -> Result<()> {
-        let registered = self.tool_host.list_tools().await;
-        self.tools = registered.iter().map(|r| ToolDefinition::from(&r.tool)).collect();
+        self.tools = self.tool_host.list_tools().await;
         Ok(())
     }
 
-    /// Add a custom tool definition.
-    pub fn add_tool(&mut self, tool: ToolDefinition) {
-        self.tools.push(tool);
+    /// Build system prompt with tool instructions.
+    fn build_system_prompt(&self) -> Option<String> {
+        let base = self.system.clone().unwrap_or_default();
+        
+        if self.tools.is_empty() {
+            if base.is_empty() {
+                return None;
+            }
+            return Some(base);
+        }
+
+        // Build tool documentation
+        let mut tool_docs = String::from("\n\n## Available Tools\n\n");
+        tool_docs.push_str("You have access to the following tools. To use a tool, output:\n\n");
+        tool_docs.push_str("```\n<tool_call>\n{\"name\": \"tool_name\", \"args\": {\"arg1\": \"value1\"}}\n</tool_call>\n```\n\n");
+        tool_docs.push_str("Available tools:\n\n");
+
+        for tool in &self.tools {
+            tool_docs.push_str(&format!("### {}\n", tool.tool.name));
+            if let Some(desc) = &tool.tool.description {
+                tool_docs.push_str(&format!("{}\n", desc));
+            }
+            tool_docs.push_str(&format!(
+                "Schema: {}\n\n",
+                serde_json::to_string(&tool.tool.input_schema).unwrap_or_default()
+            ));
+        }
+
+        tool_docs.push_str("After receiving tool results, continue your response. Only use tools when necessary.\n");
+
+        Some(format!("{}{}", base, tool_docs))
     }
 
     /// Check if a capability is allowed by policy.
@@ -86,15 +117,17 @@ impl Session {
 
     /// Send a user message and get the assistant's response.
     ///
-    /// This handles the full tool loop: if the model requests tools,
+    /// This handles the full tool loop: if the model outputs tool calls,
     /// they are executed and the results fed back until the model
-    /// produces a final text response.
+    /// produces a final response without tool calls.
     pub async fn chat(&mut self, user_input: &str) -> Result<String> {
         // Add user message
         let user_msg = Message::text(Role::User, user_input);
         self.messages.push(user_msg);
         self.store
             .append(&Event::message(self.id, Role::User, user_input))?;
+
+        let system = self.build_system_prompt();
 
         // Tool loop
         let mut iterations = 0;
@@ -106,29 +139,29 @@ impl Session {
                 ));
             }
 
-            // Get response from LLM
-            let tools = if self.tools.is_empty() {
-                None
-            } else {
-                Some(self.tools.as_slice())
-            };
-
+            // Get response from LLM (no tools param - runtime handles tools)
             let response = self
                 .client
-                .send(&self.messages, self.system.as_deref(), tools)
+                .send(&self.messages, system.as_deref(), None)
                 .await?;
 
-            // Log token usage
-            self.log_usage(&response);
+            let text = response.text();
 
-            if response.has_tool_use() {
-                // Handle tool calls
-                self.handle_tool_response(response).await?;
-            } else {
-                // Final response - extract text and return
-                let text = response.text();
+            // Check for tool calls in the response
+            if let Some(tool_call) = self.extract_tool_call(&text) {
+                // Execute tool and feed result back
+                let result = self.execute_tool_call(&tool_call).await;
                 
-                // Store assistant message
+                // Store assistant message (with tool call)
+                let assistant_msg = Message::text(Role::Assistant, &text);
+                self.messages.push(assistant_msg);
+                
+                // Add tool result as user message
+                let result_msg = format!("<tool_result>\n{}\n</tool_result>", result);
+                let user_msg = Message::text(Role::User, &result_msg);
+                self.messages.push(user_msg);
+            } else {
+                // No tool call - final response
                 let assistant_msg = Message::text(Role::Assistant, &text);
                 self.messages.push(assistant_msg);
                 self.store
@@ -139,67 +172,45 @@ impl Session {
         }
     }
 
-    /// Handle a response that includes tool use requests.
-    async fn handle_tool_response(&mut self, response: LlmResponse) -> Result<()> {
-        // Store assistant message with tool use
-        let assistant_msg = Message::blocks(Role::Assistant, response.content.clone());
-        self.messages.push(assistant_msg);
-
-        // Execute each tool and collect results
-        let mut results = Vec::new();
-        for (id, name, input) in response.tool_uses() {
-            self.store.append(&Event::new(self.id, EventKind::ToolRequested))?;
-
-            let result = self.execute_tool(name, input.clone()).await;
-            
-            let block = match result {
-                Ok(output) => {
-                    self.store.append(&Event::new(self.id, EventKind::ToolSucceeded))?;
-                    ContentBlock::tool_result(id, output)
-                }
-                Err(e) => {
-                    self.store.append(&Event::new(self.id, EventKind::ToolFailed))?;
-                    ContentBlock::tool_error(id, e.to_string())
-                }
-            };
-            results.push(block);
+    /// Extract a tool call from the response text.
+    fn extract_tool_call(&self, text: &str) -> Option<ToolCall> {
+        let start = text.find(TOOL_CALL_START)?;
+        let end = text.find(TOOL_CALL_END)?;
+        
+        if end <= start {
+            return None;
         }
 
-        // Add tool results as user message
-        let user_msg = Message::blocks(Role::User, results);
-        self.messages.push(user_msg);
+        let json_str = &text[start + TOOL_CALL_START.len()..end].trim();
+        let parsed: serde_json::Value = serde_json::from_str(json_str).ok()?;
+        
+        let name = parsed.get("name")?.as_str()?.to_string();
+        let args = parsed.get("args").cloned();
 
-        Ok(())
+        Some(ToolCall { name, args })
     }
 
-    /// Execute a single tool call.
-    async fn execute_tool(&self, name: &str, input: Value) -> Result<String> {
-        let params = if input.is_null() || input == Value::Object(Default::default()) {
-            None
-        } else {
-            Some(input)
-        };
+    /// Execute a tool call and return the result as a string.
+    async fn execute_tool_call(&self, call: &ToolCall) -> String {
+        self.store.append(&Event::new(self.id, EventKind::ToolRequested)).ok();
 
-        let result = self.tool_host.call_tool(name, params, &self.policy).await?;
+        let result = self.tool_host.call_tool(&call.name, call.args.clone(), &self.policy).await;
 
-        // Convert result to string
-        let output = result
-            .content
-            .into_iter()
-            .filter_map(|c| c.as_text().map(String::from))
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        if result.is_error {
-            Err(Error::Tool(output))
-        } else {
-            Ok(output)
+        match result {
+            Ok(r) => {
+                self.store.append(&Event::new(self.id, EventKind::ToolSucceeded)).ok();
+                // Extract text from tool result
+                r.content
+                    .into_iter()
+                    .filter_map(|c| c.as_text().map(String::from))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            }
+            Err(e) => {
+                self.store.append(&Event::new(self.id, EventKind::ToolFailed)).ok();
+                format!("Error: {}", e)
+            }
         }
-    }
-
-    fn log_usage(&self, _response: &LlmResponse) {
-        // TODO: Log to event store once we have proper usage events
-        // For now, usage is captured in LlmResponse but not persisted
     }
 
     /// End the session.
@@ -208,4 +219,10 @@ impl Session {
             .append(&Event::new(self.id, EventKind::SessionEnd))?;
         Ok(())
     }
+}
+
+/// A parsed tool call from Claude's output.
+struct ToolCall {
+    name: String,
+    args: Option<Value>,
 }
