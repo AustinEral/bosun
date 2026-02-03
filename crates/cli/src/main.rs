@@ -1,6 +1,7 @@
 use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
 
+use anyhow::{Context, Result, bail};
 use chrono::{Local, TimeZone};
 use clap::{Parser, Subcommand};
 use policy::Policy;
@@ -48,7 +49,7 @@ async fn main() {
     }
 }
 
-async fn run() -> Result<(), Box<dyn std::error::Error>> {
+async fn run() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
@@ -58,12 +59,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-async fn cmd_chat() -> Result<(), Box<dyn std::error::Error>> {
+async fn cmd_chat() -> Result<()> {
     println!("bosun v{}", env!("CARGO_PKG_VERSION"));
 
     // Initialize LLM client
     let client = Client::from_env()
-        .map_err(|e| format!("{e}\nSet ANTHROPIC_API_KEY environment variable to use bosun."))?;
+        .context("Set ANTHROPIC_API_KEY environment variable to use bosun")?;
 
     // Initialize event store
     let data_dir = dirs_data_dir().unwrap_or_else(|| ".bosun".into());
@@ -126,11 +127,12 @@ async fn cmd_chat() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn cmd_sessions(limit: usize) -> Result<(), Box<dyn std::error::Error>> {
+fn cmd_sessions(limit: usize) -> Result<()> {
     let store = open_store()?;
     let sessions = store.list_sessions()?;
 
     if sessions.is_empty() {
+        // User-facing output uses println, not logging
         println!("No sessions found.");
         return Ok(());
     }
@@ -151,15 +153,15 @@ fn cmd_sessions(limit: usize) -> Result<(), Box<dyn std::error::Error>> {
             "active"
         };
         println!(
-            "{:<36}  {:<20}  {:<8}  {}",
-            summary.id, started, summary.message_count, status
+            "{:<36}  {:<20}  {:<8}  {status}",
+            summary.id, started, summary.message_count
         );
     }
 
     Ok(())
 }
 
-fn cmd_logs(session_prefix: &str, kind_filter: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+fn cmd_logs(session_prefix: &str, kind_filter: Option<&str>) -> Result<()> {
     let store = open_store()?;
 
     // Find session by prefix
@@ -170,13 +172,10 @@ fn cmd_logs(session_prefix: &str, kind_filter: Option<&str>) -> Result<(), Box<d
         .collect();
 
     let session_id = match matching.len() {
-        0 => {
-            eprintln!("No session found matching '{}'", session_prefix);
-            std::process::exit(1);
-        }
+        0 => bail!("No session found matching '{session_prefix}'"),
         1 => matching[0].id,
         _ => {
-            eprintln!("Multiple sessions match '{}'. Be more specific:", session_prefix);
+            eprintln!("Multiple sessions match '{session_prefix}'. Be more specific:");
             for s in matching {
                 eprintln!("  {}", s.id);
             }
@@ -187,11 +186,11 @@ fn cmd_logs(session_prefix: &str, kind_filter: Option<&str>) -> Result<(), Box<d
     let events = store.load_events(session_id, kind_filter)?;
 
     if events.is_empty() {
-        println!("No events found for session {}", session_id);
+        println!("No events found for session {session_id}");
         return Ok(());
     }
 
-    println!("Session: {}\n", session_id);
+    println!("Session: {session_id}\n");
 
     for event in events {
         print_event(&event);
@@ -207,10 +206,10 @@ fn print_event(event: &Event) {
 
     match &event.kind {
         EventKind::SessionStart => {
-            println!("[{}] === Session started ===", time);
+            println!("[{time}] === Session started ===");
         }
         EventKind::SessionEnd => {
-            println!("[{}] === Session ended ===", time);
+            println!("[{time}] === Session ended ===");
         }
         EventKind::Message { role, content } => {
             let role_str = match role {
@@ -224,25 +223,25 @@ fn print_event(event: &Event) {
             } else {
                 content.clone()
             };
-            println!("[{}] {}: {}", time, role_str, display_content);
+            println!("[{time}] {role_str}: {display_content}");
         }
         EventKind::ToolCall { name, input } => {
-            println!("[{}] TOOL CALL: {} {:?}", time, name, input);
+            println!("[{time}] TOOL CALL: {name} {input:?}");
         }
         EventKind::ToolResult { name, output } => {
-            println!("[{}] TOOL RESULT: {} {:?}", time, name, output);
+            println!("[{time}] TOOL RESULT: {name} {output:?}");
         }
     }
 }
 
-fn open_store() -> Result<EventStore, Box<dyn std::error::Error>> {
+fn open_store() -> Result<EventStore> {
     let data_dir = dirs_data_dir().unwrap_or_else(|| ".bosun".into());
     let db_path = data_dir.join("events.db");
-    
+
     if !db_path.exists() {
-        return Err(format!("No database found at {}. Run 'bosun chat' first.", db_path.display()).into());
+        bail!("No database found at {}. Run 'bosun chat' first.", db_path.display());
     }
-    
+
     Ok(EventStore::open(&db_path)?)
 }
 
@@ -268,7 +267,7 @@ fn dirs_data_dir() -> Option<PathBuf> {
     }
 }
 
-fn load_policy() -> Result<Policy, Box<dyn std::error::Error>> {
+fn load_policy() -> Result<Policy> {
     let policy_path = PathBuf::from(POLICY_FILE);
 
     if policy_path.exists() {
