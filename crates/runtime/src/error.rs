@@ -17,6 +17,9 @@ pub enum Error {
     #[error("invalid state: {0}")]
     InvalidState(String),
 
+    #[error("capability denied: {0}")]
+    CapabilityDenied(String),
+
     #[error(transparent)]
     Storage(#[from] storage::Error),
 
