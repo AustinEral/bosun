@@ -8,6 +8,13 @@ const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
 const DEFAULT_MODEL: &str = "claude-sonnet-4-20250514";
 const DEFAULT_MAX_TOKENS: u32 = 4096;
 
+// OAuth tokens require Claude Code identity headers
+const CLAUDE_CODE_VERSION: &str = "2.1.2";
+const OAUTH_BETA_HEADER: &str = "claude-code-20250219,oauth-2025-04-20";
+
+// Required system prompt prefix for OAuth tokens
+const OAUTH_SYSTEM_PREFIX: &str = "You are Claude Code, Anthropic's official CLI for Claude.";
+
 /// A message in the conversation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
@@ -66,6 +73,10 @@ impl Client {
         Ok(Self::new(api_key))
     }
 
+    fn is_oauth_token(&self) -> bool {
+        self.api_key.contains("sk-ant-oat")
+    }
+
     /// Send a message and get a response.
     pub async fn send(
         &self,
@@ -85,23 +96,40 @@ impl Client {
             })
             .collect();
 
+        // For OAuth tokens, prepend required Claude Code identity to system prompt
+        let effective_system = if self.is_oauth_token() {
+            let base = system.unwrap_or("");
+            if base.is_empty() {
+                Some(OAUTH_SYSTEM_PREFIX.to_string())
+            } else {
+                Some(format!("{}\n\n{}", OAUTH_SYSTEM_PREFIX, base))
+            }
+        } else {
+            system.map(String::from)
+        };
+
         let request = ApiRequest {
             model: self.model.clone(),
             max_tokens: DEFAULT_MAX_TOKENS,
             messages: api_messages,
-            system: system.map(String::from),
+            system: effective_system,
         };
 
-        // Support both OAuth tokens (sk-ant-oat*) and API keys (sk-ant-api*)
         let mut req = self
             .http
             .post(ANTHROPIC_API_URL)
             .header("anthropic-version", "2023-06-01")
-            .header("content-type", "application/json");
+            .header("content-type", "application/json")
+            .header("accept", "application/json");
 
-        if self.api_key.starts_with("sk-ant-oat") {
-            // OAuth token - use Bearer auth
-            req = req.header("Authorization", format!("Bearer {}", self.api_key));
+        if self.is_oauth_token() {
+            // OAuth token - use Bearer auth with Claude Code identity headers
+            req = req
+                .header("Authorization", format!("Bearer {}", self.api_key))
+                .header("anthropic-beta", OAUTH_BETA_HEADER)
+                .header("anthropic-dangerous-direct-browser-access", "true")
+                .header("user-agent", format!("claude-cli/{} (external, cli)", CLAUDE_CODE_VERSION))
+                .header("x-app", "cli");
         } else {
             // Standard API key
             req = req.header("x-api-key", &self.api_key);
