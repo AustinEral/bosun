@@ -2,6 +2,15 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {
+    #[error("config error: {0}")]
+    Config(String),
+
+    #[error("network error: {0}")]
+    Network(String),
+
+    #[error("API error: {0}")]
+    Api(String),
+
     #[error("session not found: {0}")]
     SessionNotFound(String),
 
