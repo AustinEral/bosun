@@ -92,12 +92,22 @@ impl Client {
             system: system.map(String::from),
         };
 
-        let response = self
+        // Support both OAuth tokens (sk-ant-oat*) and API keys (sk-ant-api*)
+        let mut req = self
             .http
             .post(ANTHROPIC_API_URL)
-            .header("x-api-key", &self.api_key)
             .header("anthropic-version", "2023-06-01")
-            .header("content-type", "application/json")
+            .header("content-type", "application/json");
+
+        if self.api_key.starts_with("sk-ant-oat") {
+            // OAuth token - use Bearer auth
+            req = req.header("Authorization", format!("Bearer {}", self.api_key));
+        } else {
+            // Standard API key
+            req = req.header("x-api-key", &self.api_key);
+        }
+
+        let response = req
             .json(&request)
             .send()
             .await
