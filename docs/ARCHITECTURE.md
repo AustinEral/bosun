@@ -1,21 +1,22 @@
 # Bosun — Architecture Reference
 
-> **Status:** Future reference (post v0.x)
+> **Status:** Living document
 > 
-> **Source of truth for v0.x:** See [SPEC.md](./SPEC.md)
+> **Source of truth for v0.x implementation:** See [SPEC.md](./SPEC.md)
 >
-> This document describes the full architecture vision. Most of this is **deferred** until after M0/M1 ship. Read SPEC.md for what we're actually building now.
+> This document describes the full architecture vision and design philosophy. Some sections are deferred until after M0/M1 ship. Read SPEC.md for current implementation scope.
 
 ---
 
 ## Document Purpose
 
-This is a reference for future development phases. It captures:
+This captures:
+- Core design philosophy
 - Where we're headed long-term
-- Design decisions we've made for later
-- Technical details that aren't needed yet
+- How components fit together
+- Design decisions and rationale
 
-**Do not use this as a v0.x implementation guide.** Use SPEC.md.
+**For v0.x implementation details:** Use SPEC.md.
 
 ---
 
@@ -24,6 +25,216 @@ This is a reference for future development phases. It captures:
 > **All side effects require an explicit capability.**
 
 This anchors everything. Tools, network, filesystem, secrets — no capability, no access.
+
+---
+
+## Design Philosophy: Runtime, Not Framework
+
+Bosun is a **runtime**, not a framework. This distinction shapes everything.
+
+| Framework Approach | Runtime Approach (Bosun) |
+|--------------------|--------------------------|
+| Tools built into the core | Tools provided by MCP servers (external) |
+| Channels built into the core | Channels provided by adapters (external) |
+| Plugins run in-process | Extensions run as separate processes |
+| Add feature = grow the core | Add feature = new external component |
+| One big binary with everything | Small core + composable pieces |
+
+**Why this matters:**
+
+1. **Composability** — Only run what you need. Raspberry Pi deployment? Just `bosun` + `bosun-telegram`. No Discord code loaded.
+
+2. **Language-agnostic** — Channel adapters and MCP servers can be written in any language. They just speak the protocol.
+
+3. **Replaceable** — Don't like our Telegram adapter? Write your own. The interface is documented.
+
+4. **Debuggable** — Clear process boundaries. Each component has its own logs. No tangled in-process state.
+
+5. **Lightweight core** — The runtime stays small. Complexity lives at the edges.
+
+**What Bosun core provides:**
+- Session/conversation management
+- LLM communication
+- MCP tool orchestration  
+- Policy/capability enforcement
+- Event logging
+- API for channel adapters
+
+**What lives outside the core:**
+- Channel adapters (Telegram, Discord, CLI, etc.)
+- MCP tool servers (filesystem, GitHub, web search, etc.)
+- Future: Storage backends, memory providers
+
+---
+
+## Channel Adapter Architecture
+
+Channels (Telegram, Discord, Slack, CLI, etc.) are **not** built into Bosun. They're separate binaries that communicate with the runtime via a simple API.
+
+### Why Not MCP for Channels?
+
+MCP is designed for tools — request-response patterns. Channels need:
+- Persistent connections (WebSocket, long-polling)
+- Incoming webhooks
+- Platform-specific auth flows
+- Bidirectional message flow
+
+MCP doesn't fit. Channels need their own adapter pattern.
+
+### Architecture Diagram
+
+```
+┌─────────────────┐     
+│ bosun-telegram  │──┐     Adapters handle platform-specific
+└─────────────────┘  │     concerns: auth, webhooks, formatting
+┌─────────────────┐  │  ┌─────────────────┐     ┌─────────────────┐
+│ bosun-discord   │──┼─▶│     Bosun       │────▶│   MCP Servers   │
+└─────────────────┘  │  │    (runtime)    │     │    (tools)      │
+┌─────────────────┐  │  └─────────────────┘     └─────────────────┘
+│ bosun-cli       │──┘         │
+└─────────────────┘            │
+                               ▼
+                        ┌─────────────┐
+                        │   SQLite    │
+                        │  (events)   │
+                        └─────────────┘
+```
+
+### Adapter Responsibilities
+
+Each channel adapter:
+1. **Connects** to the platform (Telegram Bot API, Discord Gateway, etc.)
+2. **Authenticates** using platform-specific credentials
+3. **Receives** messages from the platform
+4. **Forwards** messages to Bosun via API (HTTP or Unix socket)
+5. **Receives** responses from Bosun
+6. **Sends** responses back to the platform (with platform-specific formatting)
+
+### Adapter Protocol (v1+)
+
+*Deferred until v1.x. v0.x uses CLI only.*
+
+The runtime will expose a simple API:
+
+```
+POST /v1/message
+{
+  "channel": "telegram",
+  "channel_id": "12345",
+  "user_id": "67890", 
+  "content": "Hello Bosun",
+  "metadata": { ... }
+}
+
+Response:
+{
+  "session_id": "abc-123",
+  "response": "Hello! How can I help?",
+  "metadata": { ... }
+}
+```
+
+Adapters are stateless from Bosun's perspective. The runtime manages sessions.
+
+### Example: Telegram Adapter
+
+`bosun-telegram` would:
+1. Read Telegram bot token from config
+2. Connect to Telegram Bot API (long-polling or webhooks)
+3. On incoming message → POST to Bosun API
+4. On Bosun response → Send via Telegram API
+5. Handle Telegram-specific features (inline keyboards, media, etc.)
+
+The adapter is ~500-1000 lines. All the AI/conversation logic lives in Bosun.
+
+### Benefits
+
+- **Swap adapters** without touching the runtime
+- **Multiple adapters** can connect simultaneously
+- **Test adapters** independently
+- **Community adapters** in any language
+- **Platform-specific features** don't bloat the core
+
+---
+
+## User Experience by Version
+
+The composable architecture is an **implementation detail**. Users see progressively simpler interfaces.
+
+### v0.x: Developers
+
+**Interface:** CLI + config files
+
+```bash
+# Manual composition
+bosun chat                          # Interactive CLI
+bosun --config ./bosun.toml chat    # With custom config
+```
+
+Users understand they're running separate processes. They edit TOML files. This is fine for developers.
+
+### v1.x: Technical Users  
+
+**Interface:** CLI + TUI + `bosun up`
+
+```bash
+# Orchestrated startup
+bosun up                            # Reads bosun.toml, spawns everything
+bosun up --with telegram,discord    # Explicit adapters
+bosun status                        # Shows running components
+bosun logs telegram                 # View adapter logs
+```
+
+```toml
+# bosun.toml
+[adapters]
+telegram = { token_env = "TELEGRAM_BOT_TOKEN" }
+discord = { token_env = "DISCORD_BOT_TOKEN" }
+
+[[mcp_servers]]
+name = "filesystem"
+command = "mcp-filesystem"
+args = ["--root", "./workspace"]
+```
+
+`bosun up` reads the config, spawns the runtime, spawns adapters, connects MCP servers. User runs one command.
+
+### v2.x: General Users
+
+**Interface:** GUI application
+
+- **One installer** — Download Bosun.app (macOS), Bosun.exe (Windows), or bosun.deb (Linux)
+- **Setup wizard** — "Connect to Telegram? [Scan QR code]"
+- **Visual config** — Checkboxes for features, no TOML editing
+- **System tray** — Runs in background, shows status
+- **Hides complexity** — User doesn't know there are multiple processes
+
+Under the hood, the GUI:
+1. Manages `bosun.toml`
+2. Runs `bosun up` equivalent
+3. Monitors component health
+4. Provides log viewer
+
+**The architecture doesn't change** — we just add layers of UX on top.
+
+### Distribution Strategy (v2.x)
+
+| Platform | Distribution |
+|----------|--------------|
+| macOS | .dmg with signed .app bundle |
+| Windows | .msi installer, optional winget |
+| Linux | .deb, .rpm, Flatpak, AppImage |
+| Raspberry Pi | .deb (arm64), setup script |
+
+Installers bundle:
+- Bosun runtime
+- Common adapters (CLI, Telegram, Discord)
+- GUI shell (v2.x)
+
+Users can install additional adapters via:
+```bash
+bosun install adapter discord-voice
+```
 
 ---
 
