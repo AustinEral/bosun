@@ -1,8 +1,0 @@
-[allow]
-fs_read = ["/tmp/**"]
-exec = ["*"]
-
-[[mcp_servers]]
-name = "filesystem"
-command = "mcp-server-filesystem"
-args = ["/tmp"]
