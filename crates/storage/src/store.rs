@@ -1,6 +1,6 @@
 //! SQLite event store implementation.
 
-use crate::{Event, EventKind, Result, Role, SessionId};
+use crate::{Event, EventKind, Result, SessionId};
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, params};
 use std::path::Path;
