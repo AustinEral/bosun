@@ -1,22 +1,11 @@
 # Bosun
 
-*A lightweight, local-first AI agent runtime.*
-
-A lightweight, local-first AI agent runtime. Your device. Your rules.
+*A lightweight, local-first AI agent runtime. Your device. Your rules.*
 
 ## Status
 
-**Phase:** Planning / Pre-development
+**Phase:** Planning / Pre-development  
 **Date:** 2026-02-03
-
-## Documentation
-
-| Document | Purpose |
-|----------|---------|
-| [VISION.md](./VISION.md) | High-level vision, problem statement, principles |
-| [SPEC.md](./SPEC.md) | Technical spec for M0/M1 milestones |
-| [COMMUNITY.md](./COMMUNITY.md) | MCP-first community borrowing strategy |
-| [ARCHITECTURE.md](./ARCHITECTURE.md) | Full architecture reference (future phases) |
 
 ## Quick Summary
 
@@ -33,6 +22,21 @@ A lightweight, local-first AI agent runtime. Your device. Your rules.
 ## Core Principle
 
 > *All side effects require an explicit capability.*
+
+## Documentation
+
+| Document | Purpose |
+|----------|---------|
+| [docs/VISION.md](./docs/VISION.md) | Why we're building this |
+| [docs/SPEC.md](./docs/SPEC.md) | What to build (M0/M1 scope) |
+| [docs/STYLE.md](./docs/STYLE.md) | How we write code |
+| [docs/COMMUNITY.md](./docs/COMMUNITY.md) | MCP-first tool strategy |
+| [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | Future architecture reference |
+
+## Contributing
+
+- **Humans:** See [CONTRIBUTING.md](./CONTRIBUTING.md)
+- **AI Agents:** See [AGENTS.md](./AGENTS.md)
 
 ## Milestones
 

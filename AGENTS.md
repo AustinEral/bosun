@@ -6,9 +6,9 @@ You're an AI contributing to Bosun. Read this before writing any code.
 
 ## Required Reading (In Order)
 
-1. **[VISION.md](./VISION.md)** — Why we're building this
-2. **[SPEC.md](./SPEC.md)** — What we're building (M0/M1 scope)
-3. **[STYLE.md](./STYLE.md)** — How we write code
+1. **[docs/VISION.md](./docs/VISION.md)** — Why we're building this
+2. **[docs/SPEC.md](./docs/SPEC.md)** — What we're building (M0/M1 scope)
+3. **[docs/STYLE.md](./docs/STYLE.md)** — How we write code
 4. **[CONTRIBUTING.md](./CONTRIBUTING.md)** — PR workflow
 
 Don't skip. Don't skim.
