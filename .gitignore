@@ -1,0 +1,29 @@
+# Build
+/target/
+*.so
+*.dylib
+*.dll
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Rust
+Cargo.lock
+**/*.rs.bk
+
+# Local
+*.db
+*.db-journal
+.env
+.env.local
+
+# Test
+*.log
