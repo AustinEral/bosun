@@ -11,7 +11,7 @@ const DEFAULT_MAX_TOKENS: u32 = 4096;
 
 // OAuth tokens require Claude Code identity headers
 const CLAUDE_CODE_VERSION: &str = "2.1.2";
-const OAUTH_BETA_HEADER: &str = "claude-code-20250219,oauth-2025-04-20,fine-grained-tool-streaming-2025-05-14,interleaved-thinking-2025-05-14";
+const OAUTH_BETA_HEADER: &str = "oauth-2025-04-20";
 
 // Required system prompt prefix for OAuth tokens
 const OAUTH_SYSTEM_PREFIX: &str = "You are Claude Code, Anthropic's official CLI for Claude.";
@@ -297,25 +297,14 @@ impl Client {
             })
             .collect();
 
-        // For OAuth tokens, use block format with cache control
+        // For OAuth tokens, use the required system prefix
+        // Skip cache_control when tools are present to avoid beta feature conflicts
         let effective_system = if self.is_oauth_token() {
-            let mut blocks = vec![SystemBlock {
-                block_type: "text",
-                text: OAUTH_SYSTEM_PREFIX.to_string(),
-                cache_control: CacheControl {
-                    control_type: "ephemeral",
-                },
-            }];
-            if let Some(s) = system {
-                blocks.push(SystemBlock {
-                    block_type: "text",
-                    text: s.to_string(),
-                    cache_control: CacheControl {
-                        control_type: "ephemeral",
-                    },
-                });
-            }
-            Some(SystemPrompt::Blocks(blocks))
+            let full_system = match system {
+                Some(s) => format!("{}\n\n{}", OAUTH_SYSTEM_PREFIX, s),
+                None => OAUTH_SYSTEM_PREFIX.to_string(),
+            };
+            Some(SystemPrompt::Simple(full_system))
         } else {
             system.map(|s| SystemPrompt::Simple(s.to_string()))
         };
