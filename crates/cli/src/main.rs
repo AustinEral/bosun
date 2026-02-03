@@ -2,7 +2,7 @@ use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
 
 use policy::Policy;
-use runtime::{llm::Client, Session};
+use runtime::{Session, llm::Client};
 use storage::EventStore;
 
 const SYSTEM_PROMPT: &str = "You are Bosun, a helpful AI assistant. Be concise and direct.";
@@ -20,9 +20,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     println!("bosun v{}", env!("CARGO_PKG_VERSION"));
 
     // Initialize LLM client
-    let client = Client::from_env().map_err(|e| {
-        format!("{e}\nSet ANTHROPIC_API_KEY environment variable to use bosun.")
-    })?;
+    let client = Client::from_env()
+        .map_err(|e| format!("{e}\nSet ANTHROPIC_API_KEY environment variable to use bosun."))?;
 
     // Initialize event store
     let data_dir = dirs_data_dir().unwrap_or_else(|| ".bosun".into());
@@ -34,11 +33,14 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     // Load policy
     let policy = load_policy()?;
-    println!("Policy: {}", if std::path::Path::new(POLICY_FILE).exists() {
-        POLICY_FILE
-    } else {
-        "default (restrictive)"
-    });
+    println!(
+        "Policy: {}",
+        if std::path::Path::new(POLICY_FILE).exists() {
+            POLICY_FILE
+        } else {
+            "default (restrictive)"
+        }
+    );
 
     // Create session
     let mut session = Session::new(store, client, policy)?.with_system(SYSTEM_PROMPT);
@@ -91,7 +93,9 @@ fn dirs_data_dir() -> Option<std::path::PathBuf> {
     {
         std::env::var_os("XDG_DATA_HOME")
             .map(std::path::PathBuf::from)
-            .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local/share")))
+            .or_else(|| {
+                std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local/share"))
+            })
             .map(|p| p.join("bosun"))
     }
     #[cfg(target_os = "windows")]
@@ -106,7 +110,7 @@ fn dirs_data_dir() -> Option<std::path::PathBuf> {
 
 fn load_policy() -> Result<Policy, Box<dyn std::error::Error>> {
     let policy_path = PathBuf::from(POLICY_FILE);
-    
+
     if policy_path.exists() {
         Ok(Policy::load(&policy_path)?)
     } else {

@@ -42,9 +42,15 @@ pub enum EventKind {
     /// A message was added to the conversation.
     Message { role: Role, content: String },
     /// A tool was invoked.
-    ToolCall { name: String, input: serde_json::Value },
+    ToolCall {
+        name: String,
+        input: serde_json::Value,
+    },
     /// A tool returned a result.
-    ToolResult { name: String, output: serde_json::Value },
+    ToolResult {
+        name: String,
+        output: serde_json::Value,
+    },
     /// Session started.
     SessionStart,
     /// Session ended.
@@ -71,9 +77,12 @@ impl Event {
     }
 
     pub fn message(session_id: SessionId, role: Role, content: impl Into<String>) -> Self {
-        Self::new(session_id, EventKind::Message {
-            role,
-            content: content.into(),
-        })
+        Self::new(
+            session_id,
+            EventKind::Message {
+                role,
+                content: content.into(),
+            },
+        )
     }
 }
