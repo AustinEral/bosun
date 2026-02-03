@@ -3,7 +3,6 @@
 //! Run with: cargo run --example test_mcp
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use mcp::ServerConfig;
 use runtime::ToolHost;

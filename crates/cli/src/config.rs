@@ -11,10 +11,14 @@ use crate::error::{Error, Result};
 #[derive(Debug, Default, Deserialize)]
 pub struct Config {
     /// Policy section (handled separately by policy crate).
+    /// These fields exist to allow the TOML to contain policy config
+    /// without causing parse errors.
     #[serde(default)]
-    pub allow: Option<toml::Value>,
+    #[allow(dead_code)]
+    allow: Option<toml::Value>,
     #[serde(default)]
-    pub deny: Option<toml::Value>,
+    #[allow(dead_code)]
+    deny: Option<toml::Value>,
 
     /// MCP server configurations.
     #[serde(default)]
