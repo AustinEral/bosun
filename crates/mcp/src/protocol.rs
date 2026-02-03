@@ -42,6 +42,10 @@ pub struct JsonRpcResponse {
 
 impl JsonRpcResponse {
     /// Returns the result if successful, or an error.
+    ///
+    /// Note: JSON-RPC 2.0 requires `result` on success, but some MCP servers
+    /// omit it for void methods. We treat missing result as `null` rather than
+    /// an error for compatibility.
     pub fn into_result(self) -> Result<Value, JsonRpcError> {
         if let Some(error) = self.error {
             Err(error)
@@ -62,7 +66,9 @@ pub struct JsonRpcError {
 
 impl std::fmt::Display for JsonRpcError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[{}] {}", self.code, self.message)
+        let code = self.code;
+        let message = &self.message;
+        write!(f, "[{code}] {message}")
     }
 }
 

@@ -100,6 +100,40 @@ use super::storage;
 - Prevents name conflicts
 - Groups related functions conceptually
 
+### Format Strings
+
+Use inline variable capture in format strings. Don't use positional placeholders with separate arguments.
+
+```rust
+// Good: inline variables, readable
+let name = "bosun";
+let version = "0.1.0";
+println!("{name} v{version}");
+
+write!(f, "[{code}] {message}")?;
+
+format!("session {session_id} started")
+
+// Bad: positional placeholders, harder to follow
+println!("{} v{}", name, version);
+
+write!(f, "[{}] {}", self.code, self.message)?;
+
+format!("{} {}", "session", session_id)
+```
+
+When variables aren't directly in scope, bind them first:
+
+```rust
+// Good: bind then format
+let code = self.code;
+let message = &self.message;
+write!(f, "[{code}] {message}")
+
+// Also acceptable for simple cases
+format!("error code: {}", self.code)  // Single value, still clear
+```
+
 ---
 
 ## 2. Naming

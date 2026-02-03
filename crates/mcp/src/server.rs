@@ -19,8 +19,9 @@ use crate::protocol::{
 /// Default timeout for MCP operations.
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(15);
 
-/// Maximum output size (256KB).
-pub const MAX_OUTPUT_SIZE: usize = 256 * 1024;
+/// Maximum output size (1MB).
+/// Sized for large tool outputs (file reads, search results).
+pub const MAX_OUTPUT_SIZE: usize = 1024 * 1024;
 
 /// Configuration for an MCP server.
 #[derive(Debug, Clone)]
