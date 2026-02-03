@@ -140,8 +140,8 @@ fn cmd_sessions(limit: usize) -> Result<()> {
     }
 
     println!(
-        "{:<36}  {:<20}  {:<8}  {}",
-        "SESSION ID", "STARTED", "MSGS", "STATUS"
+        "{:<36}  {:<20}  {:<8}  STATUS",
+        "SESSION ID", "STARTED", "MSGS"
     );
     println!("{}", "-".repeat(80));
 
