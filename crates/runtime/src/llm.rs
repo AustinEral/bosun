@@ -1,0 +1,126 @@
+//! LLM client for Claude API.
+
+use crate::{Error, Result};
+use serde::{Deserialize, Serialize};
+use storage::Role;
+
+const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
+const DEFAULT_MODEL: &str = "claude-sonnet-4-20250514";
+const DEFAULT_MAX_TOKENS: u32 = 4096;
+
+/// A message in the conversation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Message {
+    pub role: Role,
+    pub content: String,
+}
+
+/// Request to the Claude API.
+#[derive(Debug, Serialize)]
+struct ApiRequest {
+    model: String,
+    max_tokens: u32,
+    messages: Vec<ApiMessage>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    system: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct ApiMessage {
+    role: &'static str,
+    content: String,
+}
+
+/// Response from the Claude API.
+#[derive(Debug, Deserialize)]
+struct ApiResponse {
+    content: Vec<ContentBlock>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ContentBlock {
+    text: String,
+}
+
+/// Anthropic API client.
+pub struct Client {
+    http: reqwest::Client,
+    api_key: String,
+    model: String,
+}
+
+impl Client {
+    /// Create a new client with the given API key.
+    pub fn new(api_key: impl Into<String>) -> Self {
+        Self {
+            http: reqwest::Client::new(),
+            api_key: api_key.into(),
+            model: DEFAULT_MODEL.to_string(),
+        }
+    }
+
+    /// Create a client from the ANTHROPIC_API_KEY environment variable.
+    pub fn from_env() -> Result<Self> {
+        let api_key = std::env::var("ANTHROPIC_API_KEY")
+            .map_err(|_| Error::Config("ANTHROPIC_API_KEY not set".into()))?;
+        Ok(Self::new(api_key))
+    }
+
+    /// Send a message and get a response.
+    pub async fn send(
+        &self,
+        messages: &[Message],
+        system: Option<&str>,
+    ) -> Result<String> {
+        let api_messages: Vec<ApiMessage> = messages
+            .iter()
+            .filter(|m| m.role != Role::System)
+            .map(|m| ApiMessage {
+                role: match m.role {
+                    Role::User => "user",
+                    Role::Assistant => "assistant",
+                    Role::System => "user", // filtered above
+                },
+                content: m.content.clone(),
+            })
+            .collect();
+
+        let request = ApiRequest {
+            model: self.model.clone(),
+            max_tokens: DEFAULT_MAX_TOKENS,
+            messages: api_messages,
+            system: system.map(String::from),
+        };
+
+        let response = self
+            .http
+            .post(ANTHROPIC_API_URL)
+            .header("x-api-key", &self.api_key)
+            .header("anthropic-version", "2023-06-01")
+            .header("content-type", "application/json")
+            .json(&request)
+            .send()
+            .await
+            .map_err(|e| Error::Network(e.to_string()))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(Error::Api(format!("{}: {}", status, body)));
+        }
+
+        let api_response: ApiResponse = response
+            .json()
+            .await
+            .map_err(|e| Error::Api(e.to_string()))?;
+
+        let text = api_response
+            .content
+            .into_iter()
+            .map(|b| b.text)
+            .collect::<Vec<_>>()
+            .join("");
+
+        Ok(text)
+    }
+}
