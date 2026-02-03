@@ -20,6 +20,7 @@ Don't skip. Don't skim.
 1. **Stay in scope** — Build what's in SPEC.md. If it's not there, ask first.
 2. **Ask when uncertain** — Don't guess. Clarify before building the wrong thing.
 3. **One PR, one thing** — Keep changes focused.
+4. **Commands over manual edits** — Use `cargo add`, `cargo fmt`, etc. instead of hand-editing files when possible.
 
 Everything else (PR workflow, style, testing) is in the docs above.
 
