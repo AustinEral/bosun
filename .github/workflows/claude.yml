@@ -1,26 +1,24 @@
 name: Claude
 
 on:
-  # PR events - review code
-  pull_request:
-    types: [opened, synchronize]
-  
-  # Issue events - answer questions, triage
-  issues:
-    types: [opened, assigned]
-  
   # Comment events - respond to @claude mentions
   issue_comment:
     types: [created]
   pull_request_review_comment:
     types: [created]
+  
+  # Manual trigger
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to review'
+        required: false
 
 jobs:
   claude:
-    # Only run if @claude is mentioned or it's a new PR/issue
+    # Only run if @claude is mentioned in a comment
     if: |
-      github.event_name == 'pull_request' ||
-      github.event_name == 'issues' ||
+      github.event_name == 'workflow_dispatch' ||
       contains(github.event.comment.body, '@claude')
     
     runs-on: ubuntu-latest
