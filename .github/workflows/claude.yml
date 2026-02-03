@@ -30,26 +30,13 @@ jobs:
       actions: read
     
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v6
         with:
-          fetch-depth: 0
-      
-      - name: Claude Code Action
+          fetch-depth: 1
+
+      - name: Run Claude Code
+        id: claude
         uses: anthropics/claude-code-action@v1
-        env:
-          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          
-          # Custom instructions - always read the docs first
-          prompt: |
-            Before responding, read and understand these project docs:
-            - AGENTS.md (contributor rules)
-            - docs/SPEC.md (what's in scope for M0/M1)
-            - docs/STYLE.md (code style)
-            
-            For PRs: Check if changes are in scope and follow style guide.
-            For issues: Help answer questions or clarify scope.
-            For @claude mentions: Assist with whatever is asked.
-            
-            Be concise. Reference the docs when relevant.
