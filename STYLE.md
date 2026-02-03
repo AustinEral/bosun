@@ -24,16 +24,16 @@ Code is read far more often than it's written. Optimize for the next person who 
 
 ```rust
 // Good: clear intent
-pub fn bytes_per_sample(self) -> u8 {
+pub fn token_cost(self) -> f64 {
     match self {
-        PixelType::U8 => 1,
-        PixelType::U16 => 2,
+        Model::Sonnet => 0.003,
+        Model::Opus => 0.015,
     }
 }
 
 // Bad: cryptic
-pub fn bps(self) -> u8 {
-    if self == PixelType::U8 { 1 } else { 2 }
+pub fn tc(self) -> f64 {
+    if self == Model::Sonnet { 0.003 } else { 0.015 }
 }
 ```
 
@@ -90,11 +90,11 @@ use crate::config::Config;
 use crate::error::Result;
 
 // 4. Parent/sibling modules
-use super::allocation;
+use super::storage;
 ```
 
 **When to keep module prefix:**
-- Adds clarity (`indexing::plane_index` vs just `plane_index`)
+- Adds clarity (`event::emit` vs just `emit`)
 - Prevents name conflicts
 - Groups related functions conceptually
 
@@ -157,7 +157,7 @@ Use enums to represent domain concepts with finite valid values.
 pub enum SessionState {
     Active,
     Paused,
-    Waiting { for_event: EventType },
+    Waiting { for_event: EventKind },
     Ended { reason: EndReason },
 }
 
@@ -207,22 +207,24 @@ Use when you have a **closed set** of variants with minimal per-variant state.
 
 ```rust
 #[derive(Clone, Copy)]
-pub enum TiffKind {
-    Classic,
-    Big,
+pub enum EventKind {
+    RunStarted,
+    RunEnded,
+    ToolInvoked,
 }
 
-impl TiffKind {
-    pub fn header_size(self) -> u64 {
+impl EventKind {
+    pub fn is_terminal(self) -> bool {
         match self {
-            TiffKind::Classic => 8,
-            TiffKind::Big => 16,
+            EventKind::RunStarted => false,
+            EventKind::RunEnded => true,
+            EventKind::ToolInvoked => false,
         }
     }
 }
 
 // Usage is clean
-let size = kind.header_size();
+if event.kind.is_terminal() { /* ... */ }
 ```
 
 **Advantages:** Zero-cost, Copy-able, exhaustiveness checking, better optimization.
@@ -232,34 +234,40 @@ let size = kind.header_size();
 Use when variants need **different initialization parameters** or **encapsulated state**.
 
 ```rust
-pub trait Compressor {
-    fn compress(&mut self, data: &[u8]) -> Result<Vec<u8>>;
+pub trait LlmAdapter {
+    fn complete(&self, request: &Request) -> Result<Response>;
+    fn name(&self) -> &str;
 }
 
-#[derive(Default)]
-pub struct NoCompression;
-
-impl Compressor for NoCompression {
-    fn compress(&mut self, data: &[u8]) -> Result<Vec<u8>> {
-        Ok(data.to_vec())
-    }
+pub struct AnthropicAdapter {
+    api_key: String,
+    model: String,
 }
 
-pub struct LzwCompression {
-    level: u8,  // Strategy-specific config
-}
-
-impl Compressor for LzwCompression {
-    fn compress(&mut self, data: &[u8]) -> Result<Vec<u8>> {
-        // Uses self.level
+impl LlmAdapter for AnthropicAdapter {
+    fn complete(&self, request: &Request) -> Result<Response> {
+        // Uses self.api_key, self.model
         todo!()
     }
+    fn name(&self) -> &str { "anthropic" }
 }
 
-// Generic over compressor type (static dispatch)
-pub struct Writer<W, C: Compressor> {
-    backend: W,
-    compressor: C,
+pub struct OpenAiAdapter {
+    api_key: String,
+    org_id: Option<String>,  // Different config than Anthropic
+}
+
+impl LlmAdapter for OpenAiAdapter {
+    fn complete(&self, request: &Request) -> Result<Response> {
+        // Uses self.api_key, self.org_id
+        todo!()
+    }
+    fn name(&self) -> &str { "openai" }
+}
+
+// Generic over adapter type (static dispatch)
+pub struct Runtime<A: LlmAdapter> {
+    adapter: A,
 }
 ```
 
@@ -276,14 +284,14 @@ pub struct Writer<W, C: Compressor> {
 
 ```rust
 // Bad: conditionals scattered everywhere
-if is_bigtiff {
-    write_8_bytes(...)
+if provider == "anthropic" {
+    call_anthropic(...)
 } else {
-    write_4_bytes(...)
+    call_openai(...)
 }
 
 // Later in another function
-let entry_size = if is_bigtiff { 20 } else { 12 };
+let model = if provider == "anthropic" { "claude" } else { "gpt-4" };
 ```
 
 ---
@@ -296,34 +304,31 @@ Reduce nesting by returning early on error conditions.
 
 ```rust
 // Good: flat structure, happy path at low indentation
-pub fn open(self, path: &str) -> Result<Writer> {
-    let levels = self.levels
-        .ok_or(Error::InvalidSpec("levels required"))?;
+pub fn invoke_tool(&self, name: &str, params: Value) -> Result<Value> {
+    let tool = self.tools.get(name)
+        .ok_or(Error::ToolNotFound(name.to_string()))?;
     
-    if levels.is_empty() {
-        return Err(Error::InvalidSpec("levels cannot be empty"));
+    if !self.policy.allows(&tool.capabilities) {
+        return Err(Error::CapabilityDenied(name.to_string()));
     }
     
-    let base = levels[0];
-    if base.width == 0 || base.height == 0 {
-        return Err(Error::InvalidSpec("dimensions must be > 0"));
-    }
+    let result = tool.execute(params)?;
     
     // Happy path continues here
-    Ok(Writer::new(levels))
+    Ok(result)
 }
 
 // Bad: arrow code, logic buried deep
-pub fn open(self, path: &str) -> Result<Writer> {
-    if let Some(levels) = self.levels {
-        if !levels.is_empty() {
-            let base = levels[0];
-            if base.width > 0 && base.height > 0 {
-                // Happy path buried 4 levels deep
+pub fn invoke_tool(&self, name: &str, params: Value) -> Result<Value> {
+    if let Some(tool) = self.tools.get(name) {
+        if self.policy.allows(&tool.capabilities) {
+            if let Ok(result) = tool.execute(params) {
+                // Happy path buried 3 levels deep
+                return Ok(result);
             }
         }
     }
-    Err(Error::InvalidSpec("..."))
+    Err(Error::Failed)
 }
 ```
 
@@ -381,14 +386,14 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 ```rust
 // Good: actionable information
-return Err(Error::Bounds(format!(
-    "tile buffer len {} != expected {}", 
-    buf.len(), 
-    expected
+return Err(Error::InvalidConfig(format!(
+    "max_tokens {} exceeds model limit {}", 
+    config.max_tokens, 
+    model.limit
 )));
 
 // Bad: unhelpful
-return Err(Error::Bounds("wrong size".to_string()));
+return Err(Error::InvalidConfig("bad value".to_string()));
 ```
 
 ### When to Panic
@@ -474,23 +479,23 @@ let permit = permits.acquire().await?;
 ### Good Example
 
 ```rust
-/// Write a tile of image data at the specified position.
+/// Invoke a tool with the given parameters.
 ///
-/// Edge tiles must be padded by the caller to match full tile size.
-pub fn write_tile(&mut self, pos: TilePos, data: &[u8]) -> Result<()>
+/// The tool must be registered and the session must have the required capabilities.
+pub fn invoke(&self, name: &str, params: Value) -> Result<Value>
 ```
 
 ### Bad Example (Too Verbose)
 
 ```rust
-/// Write a tile of image data to the file.
+/// Invoke a tool with the given parameters.
 ///
 /// # Arguments
-/// * `pos` - The tile position
-/// * `data` - The tile data bytes
+/// * `name` - The tool name
+/// * `params` - The parameters as JSON
 ///
 /// # Errors
-/// Returns Error::Bounds if coordinates are out of range.
+/// Returns Error::ToolNotFound if tool doesn't exist.
 ```
 
 ### Use `#![warn(missing_docs)]`
@@ -591,20 +596,24 @@ pub use error::{Error, Result};
 
 ```rust
 // Bad
-fn write_header(writer: &mut Write, is_big: bool)
+fn create_session(user_id: &str, is_persistent: bool)
 
 // Good  
-fn write_header(writer: &mut Write, kind: TiffKind)
+fn create_session(user_id: &str, persistence: Persistence)
+
+enum Persistence { Ephemeral, Persistent }
 ```
 
 ### Stringly-Typed Code
 
 ```rust
 // Bad
-fn set_color(&mut self, color: &str)  // "gray" | "rgb" ???
+fn set_model(&mut self, model: &str)  // "sonnet" | "opus" ???
 
 // Good
-fn set_color(&mut self, color: Color)
+fn set_model(&mut self, model: Model)
+
+enum Model { Sonnet, Opus }
 ```
 
 ### Deep Nesting (Arrow Code)
@@ -615,15 +624,15 @@ See "Prefer Early Returns" above.
 
 ```rust
 // Bad: over-engineered before requirements are clear
-trait ImageWriter<T, E> {
+trait MessageHandler<T, E> {
     type Config;
-    fn write<W: Write>(&self, w: W, cfg: Self::Config) -> Result<(), E>;
+    fn handle<W: Write>(&self, w: W, cfg: Self::Config) -> Result<(), E>;
 }
 
 // Good: concrete implementation first
-pub struct Writer { /* ... */ }
-impl Writer {
-    pub fn write_tile(&mut self, ...) -> Result<()> { /* ... */ }
+pub struct Session { /* ... */ }
+impl Session {
+    pub fn handle_message(&mut self, msg: Message) -> Result<()> { /* ... */ }
 }
 // Extract abstractions when multiple implementations emerge
 ```
