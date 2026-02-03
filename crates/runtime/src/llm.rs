@@ -100,11 +100,7 @@ impl Client {
     }
 
     /// Send a message and get a response.
-    pub async fn send(
-        &self,
-        messages: &[Message],
-        system: Option<&str>,
-    ) -> Result<String> {
+    pub async fn send(&self, messages: &[Message], system: Option<&str>) -> Result<String> {
         let api_messages: Vec<ApiMessage> = messages
             .iter()
             .filter(|m| m.role != Role::System)
@@ -123,13 +119,17 @@ impl Client {
             let mut blocks = vec![SystemBlock {
                 block_type: "text",
                 text: OAUTH_SYSTEM_PREFIX.to_string(),
-                cache_control: CacheControl { control_type: "ephemeral" },
+                cache_control: CacheControl {
+                    control_type: "ephemeral",
+                },
             }];
             if let Some(s) = system {
                 blocks.push(SystemBlock {
                     block_type: "text",
                     text: s.to_string(),
-                    cache_control: CacheControl { control_type: "ephemeral" },
+                    cache_control: CacheControl {
+                        control_type: "ephemeral",
+                    },
                 });
             }
             Some(SystemPrompt::Blocks(blocks))
@@ -157,7 +157,10 @@ impl Client {
                 .header("Authorization", format!("Bearer {}", self.api_key))
                 .header("anthropic-beta", OAUTH_BETA_HEADER)
                 .header("anthropic-dangerous-direct-browser-access", "true")
-                .header("user-agent", format!("claude-cli/{} (external, cli)", CLAUDE_CODE_VERSION))
+                .header(
+                    "user-agent",
+                    format!("claude-cli/{} (external, cli)", CLAUDE_CODE_VERSION),
+                )
                 .header("x-app", "cli");
         } else {
             // Standard API key

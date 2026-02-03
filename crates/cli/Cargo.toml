@@ -11,4 +11,5 @@ path = "src/main.rs"
 [dependencies]
 runtime = { path = "../runtime" }
 storage = { path = "../storage" }
+policy = { path = "../policy" }
 tokio.workspace = true

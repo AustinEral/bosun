@@ -1,7 +1,8 @@
 //! Session management.
 
 use crate::llm::{Client, Message};
-use crate::Result;
+use crate::{Error, Result};
+use policy::{CapabilityRequest, Decision, Policy};
 use storage::{Event, EventKind, EventStore, Role, SessionId};
 
 /// A conversation session.
@@ -9,13 +10,14 @@ pub struct Session {
     pub id: SessionId,
     store: EventStore,
     client: Client,
+    policy: Policy,
     messages: Vec<Message>,
     system: Option<String>,
 }
 
 impl Session {
-    /// Create a new session with the given store and client.
-    pub fn new(store: EventStore, client: Client) -> Result<Self> {
+    /// Create a new session with the given store, client, and policy.
+    pub fn new(store: EventStore, client: Client, policy: Policy) -> Result<Self> {
         let id = SessionId::new();
         let event = Event::new(id, EventKind::SessionStart);
         store.append(&event)?;
@@ -24,6 +26,7 @@ impl Session {
             id,
             store,
             client,
+            policy,
             messages: Vec::new(),
             system: None,
         })
@@ -33,6 +36,19 @@ impl Session {
     pub fn with_system(mut self, system: impl Into<String>) -> Self {
         self.system = Some(system.into());
         self
+    }
+
+    /// Check if a capability is allowed by policy.
+    pub fn check_capability(&self, request: &CapabilityRequest) -> Decision {
+        self.policy.check(request)
+    }
+
+    /// Request a capability, returning an error if denied.
+    pub fn require_capability(&self, request: &CapabilityRequest) -> Result<()> {
+        match self.policy.check(request) {
+            Decision::Allow => Ok(()),
+            Decision::Deny { reason } => Err(Error::CapabilityDenied(reason)),
+        }
     }
 
     /// Send a user message and get the assistant's response.

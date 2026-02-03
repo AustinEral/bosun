@@ -103,10 +103,16 @@ impl Policy {
         // Check allowlist
         let allowed = match request.kind {
             CapabilityKind::FsRead => self.check_path_allowed(&self.allow.fs_read, &request.scope),
-            CapabilityKind::FsWrite => self.check_path_allowed(&self.allow.fs_write, &request.scope),
-            CapabilityKind::NetHttp => self.check_domain_allowed(&self.allow.net_http, &request.scope),
+            CapabilityKind::FsWrite => {
+                self.check_path_allowed(&self.allow.fs_write, &request.scope)
+            }
+            CapabilityKind::NetHttp => {
+                self.check_domain_allowed(&self.allow.net_http, &request.scope)
+            }
             CapabilityKind::Exec => self.check_command_allowed(&self.allow.exec, &request.scope),
-            CapabilityKind::SecretsRead => self.check_exact_allowed(&self.allow.secrets_read, &request.scope),
+            CapabilityKind::SecretsRead => {
+                self.check_exact_allowed(&self.allow.secrets_read, &request.scope)
+            }
         };
 
         if allowed {
@@ -116,7 +122,11 @@ impl Policy {
                 reason: format!(
                     "{:?} not in allowlist{}",
                     request.kind,
-                    request.scope.as_ref().map(|s| format!(" (scope: {})", s)).unwrap_or_default()
+                    request
+                        .scope
+                        .as_ref()
+                        .map(|s| format!(" (scope: {})", s))
+                        .unwrap_or_default()
                 ),
             }
         }
@@ -223,14 +233,30 @@ net_http = ["api.anthropic.com"]
 all = ["exec"]
 "#;
         let policy = Policy::parse(toml).unwrap();
-        
+
         // Allowed
-        assert!(policy.check(&CapabilityRequest::fs_read("./foo.txt")).is_allowed());
-        assert!(policy.check(&CapabilityRequest::fs_read("/tmp/bar/baz")).is_allowed());
-        assert!(policy.check(&CapabilityRequest::net_http("api.anthropic.com")).is_allowed());
-        
+        assert!(
+            policy
+                .check(&CapabilityRequest::fs_read("./foo.txt"))
+                .is_allowed()
+        );
+        assert!(
+            policy
+                .check(&CapabilityRequest::fs_read("/tmp/bar/baz"))
+                .is_allowed()
+        );
+        assert!(
+            policy
+                .check(&CapabilityRequest::net_http("api.anthropic.com"))
+                .is_allowed()
+        );
+
         // Denied
         assert!(!policy.check(&CapabilityRequest::exec("ls")).is_allowed());
-        assert!(!policy.check(&CapabilityRequest::net_http("evil.com")).is_allowed());
+        assert!(
+            !policy
+                .check(&CapabilityRequest::net_http("evil.com"))
+                .is_allowed()
+        );
     }
 }
