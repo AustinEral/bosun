@@ -8,7 +8,7 @@ use std::sync::Arc;
 use chrono::{Local, TimeZone};
 use clap::{Parser, Subcommand};
 use policy::Policy;
-use runtime::{llm::Client, Session, ToolHost};
+use runtime::{Session, ToolHost, llm::Client};
 use storage::{Event, EventKind, EventStore, Role};
 
 use config::Config;
@@ -98,10 +98,10 @@ async fn cmd_chat() -> Result<()> {
     }
 
     // Create session
-    let mut session = Session::new(store, client, policy, Arc::new(tool_host))?
-        .with_system(SYSTEM_PROMPT);
+    let mut session =
+        Session::new(store, client, policy, Arc::new(tool_host))?.with_system(SYSTEM_PROMPT);
     session.load_tools().await?;
-    
+
     println!("Session ID: {}", session.id);
     println!("Type 'quit' or Ctrl+D to exit.\n");
 

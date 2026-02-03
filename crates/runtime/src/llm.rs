@@ -133,11 +133,7 @@ impl Client {
     }
 
     /// Send messages and get a response.
-    pub async fn send(
-        &self,
-        messages: &[Message],
-        system: Option<&str>,
-    ) -> Result<LlmResponse> {
+    pub async fn send(&self, messages: &[Message], system: Option<&str>) -> Result<LlmResponse> {
         let api_messages: Vec<ApiMessage> = messages
             .iter()
             .filter(|m| m.role != Role::System)

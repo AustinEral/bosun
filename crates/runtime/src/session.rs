@@ -72,7 +72,7 @@ impl Session {
     /// Build system prompt with tool instructions.
     fn build_system_prompt(&self) -> Option<String> {
         let base = self.system.clone().unwrap_or_default();
-        
+
         if self.tools.is_empty() {
             if base.is_empty() {
                 return None;
@@ -140,10 +140,7 @@ impl Session {
             }
 
             // Get response from LLM (no tools param - runtime handles tools)
-            let response = self
-                .client
-                .send(&self.messages, system.as_deref())
-                .await?;
+            let response = self.client.send(&self.messages, system.as_deref()).await?;
 
             let text = response.text.clone();
 
@@ -151,11 +148,11 @@ impl Session {
             if let Some(tool_call) = self.extract_tool_call(&text) {
                 // Execute tool and feed result back
                 let result = self.execute_tool_call(&tool_call).await;
-                
+
                 // Store assistant message (with tool call)
                 let assistant_msg = Message::text(Role::Assistant, text.clone());
                 self.messages.push(assistant_msg);
-                
+
                 // Add tool result as user message
                 let result_msg = format!("<tool_result>\n{result}\n</tool_result>");
                 let user_msg = Message::text(Role::User, result_msg);
@@ -176,14 +173,14 @@ impl Session {
     fn extract_tool_call(&self, text: &str) -> Option<ToolCall> {
         let start = text.find(TOOL_CALL_START)?;
         let end = text.find(TOOL_CALL_END)?;
-        
+
         if end <= start {
             return None;
         }
 
         let json_str = &text[start + TOOL_CALL_START.len()..end].trim();
         let parsed: serde_json::Value = serde_json::from_str(json_str).ok()?;
-        
+
         let name = parsed.get("name")?.as_str()?.to_string();
         let args = parsed.get("args").cloned();
 
@@ -192,13 +189,20 @@ impl Session {
 
     /// Execute a tool call and return the result as a string.
     async fn execute_tool_call(&self, call: &ToolCall) -> String {
-        self.store.append(&Event::new(self.id, EventKind::ToolRequested)).ok();
+        self.store
+            .append(&Event::new(self.id, EventKind::ToolRequested))
+            .ok();
 
-        let result = self.tool_host.call_tool(&call.name, call.args.clone(), &self.policy).await;
+        let result = self
+            .tool_host
+            .call_tool(&call.name, call.args.clone(), &self.policy)
+            .await;
 
         match result {
             Ok(r) => {
-                self.store.append(&Event::new(self.id, EventKind::ToolSucceeded)).ok();
+                self.store
+                    .append(&Event::new(self.id, EventKind::ToolSucceeded))
+                    .ok();
                 // Extract text from tool result
                 r.content
                     .into_iter()
@@ -207,7 +211,9 @@ impl Session {
                     .join("\n")
             }
             Err(e) => {
-                self.store.append(&Event::new(self.id, EventKind::ToolFailed)).ok();
+                self.store
+                    .append(&Event::new(self.id, EventKind::ToolFailed))
+                    .ok();
                 format!("Error: {}", e)
             }
         }

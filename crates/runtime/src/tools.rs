@@ -47,7 +47,10 @@ impl ToolHost {
         for config in &self.configs {
             if let Err(e) = self.spawn_server(config.clone()).await {
                 // Log error but continue with other servers
-                eprintln!("Warning: Failed to initialize MCP server {}: {e}", config.name);
+                eprintln!(
+                    "Warning: Failed to initialize MCP server {}: {e}",
+                    config.name
+                );
             }
         }
         Ok(())
@@ -55,13 +58,14 @@ impl ToolHost {
 
     async fn spawn_server(&self, config: ServerConfig) -> Result<()> {
         let name = config.name.clone();
-        let server = Server::spawn(config).await.map_err(|e| {
-            Error::Tool(format!("failed to spawn MCP server {name}: {e}"))
-        })?;
+        let server = Server::spawn(config)
+            .await
+            .map_err(|e| Error::Tool(format!("failed to spawn MCP server {name}: {e}")))?;
 
-        server.initialize().await.map_err(|e| {
-            Error::Tool(format!("failed to initialize MCP server {name}: {e}"))
-        })?;
+        server
+            .initialize()
+            .await
+            .map_err(|e| Error::Tool(format!("failed to initialize MCP server {name}: {e}")))?;
 
         // Discover tools from this server
         let server_tools = server.tools().await;
@@ -110,9 +114,10 @@ impl ToolHost {
         policy: &Policy,
     ) -> Result<CallToolResult> {
         // Find the tool
-        let registered = self.get_tool(name).await.ok_or_else(|| {
-            Error::Tool(format!("tool not found: {name}"))
-        })?;
+        let registered = self
+            .get_tool(name)
+            .await
+            .ok_or_else(|| Error::Tool(format!("tool not found: {name}")))?;
 
         // Check capability policy
         let capability = tool_capability(name, &params);
@@ -125,14 +130,15 @@ impl ToolHost {
 
         // Get the server
         let servers = self.servers.read().await;
-        let server = servers.get(&registered.server_name).ok_or_else(|| {
-            Error::Tool(format!("server not found: {}", registered.server_name))
-        })?;
+        let server = servers
+            .get(&registered.server_name)
+            .ok_or_else(|| Error::Tool(format!("server not found: {}", registered.server_name)))?;
 
         // Call the tool
-        let result = server.call_tool(name, params).await.map_err(|e| {
-            Error::Tool(format!("tool call failed: {e}"))
-        })?;
+        let result = server
+            .call_tool(name, params)
+            .await
+            .map_err(|e| Error::Tool(format!("tool call failed: {e}")))?;
 
         Ok(result)
     }

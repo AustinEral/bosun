@@ -38,10 +38,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Try reading a file
     println!("\nTesting read_file tool...");
-    
+
     // Create a test file
     std::fs::write("/tmp/bosun-test.txt", "Hello from Bosun!")?;
-    
+
     // Call the tool (without policy for this test)
     let policy = policy::Policy::permissive();
     let result = host

@@ -204,7 +204,8 @@ impl Server {
         }
 
         // Read response with timeout
-        let response = timeout(DEFAULT_TIMEOUT, self.read_response()).await
+        let response = timeout(DEFAULT_TIMEOUT, self.read_response())
+            .await
             .map_err(|_| Error::Timeout)??;
 
         // Verify response ID matches
@@ -247,7 +248,7 @@ impl Server {
     async fn read_response(&self) -> Result<JsonRpcResponse> {
         let mut stdout = self.stdout.lock().await;
         let mut line = String::new();
-        
+
         let bytes_read = stdout.read_line(&mut line).await?;
         if bytes_read == 0 {
             return Err(Error::ServerExited);
