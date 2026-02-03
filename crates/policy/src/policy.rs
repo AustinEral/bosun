@@ -2,7 +2,7 @@
 
 use crate::{CapabilityKind, CapabilityRequest, Error, Result};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::Path;
 
 /// Policy configuration loaded from TOML.
