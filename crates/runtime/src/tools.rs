@@ -167,9 +167,7 @@ impl ToolHost {
 fn tool_capability(name: &str, _params: &Option<Value>) -> CapabilityRequest {
     // Default: treat tool calls as exec (most restrictive)
     // TODO: Parse tool schemas for declared capabilities
-    CapabilityRequest::Exec {
-        command: name.to_string(),
-    }
+    CapabilityRequest::exec(name)
 }
 
 #[cfg(test)]
