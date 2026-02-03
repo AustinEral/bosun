@@ -186,8 +186,10 @@ impl EventStore {
 fn event_kind_name(kind: &EventKind) -> &'static str {
     match kind {
         EventKind::Message { .. } => "message",
-        EventKind::ToolCall { .. } => "tool_call",
-        EventKind::ToolResult { .. } => "tool_result",
+        EventKind::ToolRequested => "tool_requested",
+        EventKind::ToolInvoked { .. } => "tool_invoked",
+        EventKind::ToolSucceeded => "tool_succeeded",
+        EventKind::ToolFailed => "tool_failed",
         EventKind::SessionStart => "session_start",
         EventKind::SessionEnd => "session_end",
     }
