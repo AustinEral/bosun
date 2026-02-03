@@ -317,6 +317,13 @@ impl Client {
             tools: tools.map(|t| t.to_vec()),
         };
 
+        // Debug: print request
+        if std::env::var("BOSUN_DEBUG").is_ok() {
+            eprintln!("=== REQUEST ===");
+            eprintln!("{}", serde_json::to_string_pretty(&request).unwrap_or_default());
+            eprintln!("===============");
+        }
+
         let mut req = self
             .http
             .post(ANTHROPIC_API_URL)
