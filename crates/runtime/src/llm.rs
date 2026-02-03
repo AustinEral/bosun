@@ -10,7 +10,7 @@ const DEFAULT_MAX_TOKENS: u32 = 4096;
 
 // OAuth tokens require Claude Code identity headers
 const CLAUDE_CODE_VERSION: &str = "2.1.2";
-const OAUTH_BETA_HEADER: &str = "claude-code-20250219,oauth-2025-04-20";
+const OAUTH_BETA_HEADER: &str = "claude-code-20250219,oauth-2025-04-20,fine-grained-tool-streaming-2025-05-14,interleaved-thinking-2025-05-14";
 
 // Required system prompt prefix for OAuth tokens
 const OAUTH_SYSTEM_PREFIX: &str = "You are Claude Code, Anthropic's official CLI for Claude.";
