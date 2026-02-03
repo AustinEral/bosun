@@ -142,10 +142,10 @@ impl Session {
             // Get response from LLM (no tools param - runtime handles tools)
             let response = self
                 .client
-                .send(&self.messages, system.as_deref(), None)
+                .send(&self.messages, system.as_deref())
                 .await?;
 
-            let text = response.text();
+            let text = response.text.clone();
 
             // Check for tool calls in the response
             if let Some(tool_call) = self.extract_tool_call(&text) {
@@ -153,16 +153,16 @@ impl Session {
                 let result = self.execute_tool_call(&tool_call).await;
                 
                 // Store assistant message (with tool call)
-                let assistant_msg = Message::text(Role::Assistant, &text);
+                let assistant_msg = Message::text(Role::Assistant, text.clone());
                 self.messages.push(assistant_msg);
                 
                 // Add tool result as user message
-                let result_msg = format!("<tool_result>\n{}\n</tool_result>", result);
-                let user_msg = Message::text(Role::User, &result_msg);
+                let result_msg = format!("<tool_result>\n{result}\n</tool_result>");
+                let user_msg = Message::text(Role::User, result_msg);
                 self.messages.push(user_msg);
             } else {
                 // No tool call - final response
-                let assistant_msg = Message::text(Role::Assistant, &text);
+                let assistant_msg = Message::text(Role::Assistant, text.clone());
                 self.messages.push(assistant_msg);
                 self.store
                     .append(&Event::message(self.id, Role::Assistant, &text))?;
