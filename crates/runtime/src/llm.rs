@@ -10,7 +10,7 @@ const DEFAULT_MAX_TOKENS: u32 = 4096;
 
 // OAuth tokens require Claude Code identity headers
 const CLAUDE_CODE_VERSION: &str = "2.1.2";
-const OAUTH_BETA_HEADER: &str = "claude-code-20250219,oauth-2025-04-20";
+const OAUTH_BETA_HEADER: &str = "claude-code-20250219,oauth-2025-04-20,fine-grained-tool-streaming-2025-05-14,interleaved-thinking-2025-05-14";
 
 // Required system prompt prefix for OAuth tokens
 const OAUTH_SYSTEM_PREFIX: &str = "You are Claude Code, Anthropic's official CLI for Claude.";
@@ -41,13 +41,6 @@ pub struct LlmResponse {
     pub usage: Usage,
 }
 
-impl LlmResponse {
-    /// Get the response text.
-    pub fn text(&self) -> &str {
-        &self.text
-    }
-}
-
 /// Token usage information.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct Usage {
@@ -66,7 +59,29 @@ struct ApiRequest {
     max_tokens: u32,
     messages: Vec<ApiMessage>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    system: Option<String>,
+    system: Option<SystemPrompt>,
+}
+
+/// System prompt - either a simple string or array of blocks with cache control.
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum SystemPrompt {
+    Simple(String),
+    Blocks(Vec<SystemBlock>),
+}
+
+#[derive(Debug, Serialize)]
+struct SystemBlock {
+    #[serde(rename = "type")]
+    block_type: &'static str,
+    text: String,
+    cache_control: CacheControl,
+}
+
+#[derive(Debug, Serialize)]
+struct CacheControl {
+    #[serde(rename = "type")]
+    control_type: &'static str,
 }
 
 /// Message in API format.
@@ -136,15 +151,27 @@ impl Client {
             })
             .collect();
 
-        // For OAuth tokens, prepend the required system prefix
+        // For OAuth tokens, use block format with cache control
         let effective_system = if self.is_oauth_token() {
-            let full_system = match system {
-                Some(s) => format!("{}\n\n{}", OAUTH_SYSTEM_PREFIX, s),
-                None => OAUTH_SYSTEM_PREFIX.to_string(),
-            };
-            Some(full_system)
+            let mut blocks = vec![SystemBlock {
+                block_type: "text",
+                text: OAUTH_SYSTEM_PREFIX.to_string(),
+                cache_control: CacheControl {
+                    control_type: "ephemeral",
+                },
+            }];
+            if let Some(s) = system {
+                blocks.push(SystemBlock {
+                    block_type: "text",
+                    text: s.to_string(),
+                    cache_control: CacheControl {
+                        control_type: "ephemeral",
+                    },
+                });
+            }
+            Some(SystemPrompt::Blocks(blocks))
         } else {
-            system.map(|s| s.to_string())
+            system.map(|s| SystemPrompt::Simple(s.to_string()))
         };
 
         let request = ApiRequest {
