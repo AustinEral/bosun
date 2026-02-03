@@ -1,6 +1,6 @@
 # Bosun — Rust Style Guide
 
-A practical style guide for Bosun development. Combines official Rust guidelines with lessons from excellent projects like ripgrep, tokio, and axum.
+A practical style guide for Bosun development. Combines official Rust guidelines with lessons from excellent projects.
 
 ---
 
@@ -13,6 +13,42 @@ cargo clippy       # Lint
 cargo test         # Run tests
 cargo doc --open   # Check docs build
 ```
+
+---
+
+## Core Principles
+
+### Human Readability First
+
+Code is read far more often than it's written. Optimize for the next person who needs to understand this code.
+
+```rust
+// Good: clear intent
+pub fn bytes_per_sample(self) -> u8 {
+    match self {
+        PixelType::U8 => 1,
+        PixelType::U16 => 2,
+    }
+}
+
+// Bad: cryptic
+pub fn bps(self) -> u8 {
+    if self == PixelType::U8 { 1 } else { 2 }
+}
+```
+
+### YAGNI (You Aren't Gonna Need It)
+
+Build only what's required now. Don't add functionality based on speculation.
+
+- ✅ Implement what the spec requires
+- ❌ Don't add features "just in case"
+- ✅ Minimal stubs marked clearly as future work
+- ❌ Don't build full APIs before they're needed
+
+### All Side Effects Require Explicit Capability
+
+This is Bosun's core principle. It applies to code design too — make side effects visible and intentional.
 
 ---
 
@@ -34,23 +70,14 @@ let config = Config {
     version: Version::new(0, 1, 0),
     debug: true,
 };
-
-// Good: one blank line between functions
-fn foo() {
-    // ...
-}
-
-fn bar() {
-    // ...
-}
 ```
 
-### Imports
+### Import Organization
 
-Group and sort imports:
+All `use` statements at the top, never inline. Group with blank lines:
 
 ```rust
-// 1. std library
+// 1. Standard library
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -58,10 +85,18 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
-// 3. Internal crates/modules
+// 3. Crate root items
 use crate::config::Config;
 use crate::error::Result;
+
+// 4. Parent/sibling modules
+use super::allocation;
 ```
+
+**When to keep module prefix:**
+- Adds clarity (`indexing::plane_index` vs just `plane_index`)
+- Prevents name conflicts
+- Groups related functions conceptually
 
 ---
 
@@ -73,7 +108,7 @@ Follow [RFC 430](https://rust-lang.github.io/rfcs/0430-finalizing-naming-convent
 |------|------------|---------|
 | Crates | `snake_case` | `bosun_runtime` |
 | Modules | `snake_case` | `event_store` |
-| Types (struct, enum, trait) | `UpperCamelCase` | `SessionManager` |
+| Types | `UpperCamelCase` | `SessionManager` |
 | Functions, methods | `snake_case` | `run_session` |
 | Local variables | `snake_case` | `event_count` |
 | Constants | `SCREAMING_SNAKE_CASE` | `MAX_RETRIES` |
@@ -93,22 +128,17 @@ fn to_string(&self) -> String
 fn into_inner(self) -> T
 ```
 
-### Getters
+### Getters (no `get_` prefix)
 
 ```rust
-// Good: no get_ prefix
 fn name(&self) -> &str
 fn is_empty(&self) -> bool
 fn has_children(&self) -> bool
-
-// Bad
-fn get_name(&self) -> &str
 ```
 
 ### Iterators
 
 ```rust
-// Good: iter, iter_mut, into_iter
 fn iter(&self) -> Iter<'_, T>
 fn iter_mut(&mut self) -> IterMut<'_, T>
 fn into_iter(self) -> IntoIter<T>
@@ -118,61 +148,12 @@ fn into_iter(self) -> IntoIter<T>
 
 ## 3. Types & Structures
 
-### Newtypes for Clarity
+### Domain Modeling with Enums
+
+Use enums to represent domain concepts with finite valid values.
 
 ```rust
-// Good: distinct types prevent mixing up IDs
-struct SessionId(Ulid);
-struct RunId(Ulid);
-
-// Bad: easy to confuse
-fn start_run(session: Ulid, run: Ulid);
-
-// Good: types make it clear
-fn start_run(session: SessionId, run: RunId);
-```
-
-### Builder Pattern for Complex Construction
-
-```rust
-// Good: builder for types with many optional fields
-let config = ConfigBuilder::new()
-    .model("claude-sonnet-4-20250514")
-    .max_tokens(8000)
-    .timeout(Duration::from_secs(30))
-    .build()?;
-
-// Implementation
-pub struct ConfigBuilder {
-    model: Option<String>,
-    max_tokens: Option<usize>,
-    timeout: Option<Duration>,
-}
-
-impl ConfigBuilder {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn model(mut self, model: impl Into<String>) -> Self {
-        self.model = Some(model.into());
-        self
-    }
-
-    pub fn build(self) -> Result<Config> {
-        Ok(Config {
-            model: self.model.ok_or(Error::MissingField("model"))?,
-            max_tokens: self.max_tokens.unwrap_or(4096),
-            timeout: self.timeout.unwrap_or(Duration::from_secs(60)),
-        })
-    }
-}
-```
-
-### Enums for State Machines
-
-```rust
-// Good: state is explicit and exhaustive
+// Good: type system enforces valid values
 pub enum SessionState {
     Active,
     Paused,
@@ -180,18 +161,198 @@ pub enum SessionState {
     Ended { reason: EndReason },
 }
 
-// Match forces handling all cases
-match state {
-    SessionState::Active => { /* ... */ }
-    SessionState::Paused => { /* ... */ }
-    SessionState::Waiting { for_event } => { /* ... */ }
-    SessionState::Ended { reason } => { /* ... */ }
+// Bad: stringly-typed
+pub struct Session {
+    state: String,  // "active" | "paused" ???
 }
+
+// Bad: boolean blindness
+pub struct Session {
+    is_paused: bool,  // What about other states?
+}
+```
+
+### Newtypes for Clarity
+
+```rust
+// Good: distinct types prevent mixing up IDs
+struct SessionId(Ulid);
+struct RunId(Ulid);
+
+fn start_run(session: SessionId, run: RunId);  // Can't swap accidentally
+
+// Bad: easy to confuse
+fn start_run(session: Ulid, run: Ulid);
+```
+
+### Builder Pattern for Complex Construction
+
+```rust
+let config = ConfigBuilder::new()
+    .model("claude-sonnet-4-20250514")
+    .max_tokens(8000)
+    .timeout(Duration::from_secs(30))
+    .build()?;
 ```
 
 ---
 
-## 4. Error Handling
+## 4. Strategy Pattern
+
+When behavior varies based on a type, avoid scattering conditionals. Use **enum dispatch** or **trait-based strategies**.
+
+### Enum Dispatch
+
+Use when you have a **closed set** of variants with minimal per-variant state.
+
+```rust
+#[derive(Clone, Copy)]
+pub enum TiffKind {
+    Classic,
+    Big,
+}
+
+impl TiffKind {
+    pub fn header_size(self) -> u64 {
+        match self {
+            TiffKind::Classic => 8,
+            TiffKind::Big => 16,
+        }
+    }
+}
+
+// Usage is clean
+let size = kind.header_size();
+```
+
+**Advantages:** Zero-cost, Copy-able, exhaustiveness checking, better optimization.
+
+### Trait-Based Strategy
+
+Use when variants need **different initialization parameters** or **encapsulated state**.
+
+```rust
+pub trait Compressor {
+    fn compress(&mut self, data: &[u8]) -> Result<Vec<u8>>;
+}
+
+#[derive(Default)]
+pub struct NoCompression;
+
+impl Compressor for NoCompression {
+    fn compress(&mut self, data: &[u8]) -> Result<Vec<u8>> {
+        Ok(data.to_vec())
+    }
+}
+
+pub struct LzwCompression {
+    level: u8,  // Strategy-specific config
+}
+
+impl Compressor for LzwCompression {
+    fn compress(&mut self, data: &[u8]) -> Result<Vec<u8>> {
+        // Uses self.level
+        todo!()
+    }
+}
+
+// Generic over compressor type (static dispatch)
+pub struct Writer<W, C: Compressor> {
+    backend: W,
+    compressor: C,
+}
+```
+
+### Choosing Between Enum and Trait
+
+| Factor | Enum Dispatch | Trait Strategy |
+|--------|--------------|----------------|
+| Variants | Closed set | Closed or extensible |
+| State | Minimal, uniform | Varies by strategy |
+| Initialization | Same for all | Different per strategy |
+| Copy-able | Yes | Usually no |
+
+### Anti-Pattern: Scattered Conditionals
+
+```rust
+// Bad: conditionals scattered everywhere
+if is_bigtiff {
+    write_8_bytes(...)
+} else {
+    write_4_bytes(...)
+}
+
+// Later in another function
+let entry_size = if is_bigtiff { 20 } else { 12 };
+```
+
+---
+
+## 5. Complexity Management
+
+### Prefer Early Returns
+
+Reduce nesting by returning early on error conditions.
+
+```rust
+// Good: flat structure, happy path at low indentation
+pub fn open(self, path: &str) -> Result<Writer> {
+    let levels = self.levels
+        .ok_or(Error::InvalidSpec("levels required"))?;
+    
+    if levels.is_empty() {
+        return Err(Error::InvalidSpec("levels cannot be empty"));
+    }
+    
+    let base = levels[0];
+    if base.width == 0 || base.height == 0 {
+        return Err(Error::InvalidSpec("dimensions must be > 0"));
+    }
+    
+    // Happy path continues here
+    Ok(Writer::new(levels))
+}
+
+// Bad: arrow code, logic buried deep
+pub fn open(self, path: &str) -> Result<Writer> {
+    if let Some(levels) = self.levels {
+        if !levels.is_empty() {
+            let base = levels[0];
+            if base.width > 0 && base.height > 0 {
+                // Happy path buried 4 levels deep
+            }
+        }
+    }
+    Err(Error::InvalidSpec("..."))
+}
+```
+
+### Function Extraction
+
+Extract a function when:
+- A code block has a clear, nameable purpose
+- The same logic is used more than once
+- Testing would benefit from isolation
+
+### Module Organization
+
+Organize by responsibility, not technical layer.
+
+```rust
+// Good: clear responsibilities
+mod session;      // Session management
+mod run;          // Run execution  
+mod event;        // Event handling
+
+// Bad: vague groupings
+mod utils;
+mod helpers;
+mod common;
+```
+
+---
+
+## 6. Error Handling
 
 ### Custom Error Types
 
@@ -204,62 +365,55 @@ pub enum Error {
     SessionNotFound(SessionId),
 
     #[error("capability denied: {capability} for {tool}")]
-    CapabilityDenied {
-        capability: String,
-        tool: String,
-    },
+    CapabilityDenied { capability: String, tool: String },
 
     #[error("tool timeout after {0:?}")]
     ToolTimeout(Duration),
 
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
-
-    #[error("json error: {0}")]
-    Json(#[from] serde_json::Error),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
 ```
 
-### Error Context
+### Descriptive Error Messages
 
 ```rust
-// Good: add context to errors
-use anyhow::Context;
+// Good: actionable information
+return Err(Error::Bounds(format!(
+    "tile buffer len {} != expected {}", 
+    buf.len(), 
+    expected
+)));
 
-fn load_config(path: &Path) -> Result<Config> {
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("failed to read config: {}", path.display()))?;
-
-    toml::from_str(&content)
-        .with_context(|| format!("failed to parse config: {}", path.display()))
-}
+// Bad: unhelpful
+return Err(Error::Bounds("wrong size".to_string()));
 ```
 
 ### When to Panic
 
+Almost never. Panics are for programmer errors that should never happen.
+
 ```rust
-// OK to panic: programming errors, invariant violations
-fn get_session(&self, id: SessionId) -> &Session {
-    self.sessions.get(&id).expect("session must exist after creation")
+// Acceptable: exhaustive enum
+match kind {
+    Kind::A => 1,
+    Kind::B => 2,
+    _ => unreachable!(),
 }
 
-// NOT OK: user input, external data, recoverable errors
-// Use Result instead
-fn parse_config(input: &str) -> Result<Config> {
-    // ...
-}
+// Unacceptable: recoverable error
+let value = map.get(key).expect("key must exist");  // Use Result
 ```
 
 ---
 
-## 5. Concurrency
+## 7. Concurrency
 
 ### Prefer Message Passing
 
 ```rust
-// Good: channels for communication
 use tokio::sync::mpsc;
 
 let (tx, mut rx) = mpsc::channel(32);
@@ -276,122 +430,67 @@ while let Some(event) = rx.recv().await {
 ### Minimize Shared State
 
 ```rust
-// Good: Arc<Mutex<T>> only when necessary
 // Keep critical sections small
 let count = {
     let guard = self.counter.lock().unwrap();
     *guard
 }; // Lock released here
 
-// Better: use atomic types for simple counters
+// Better for simple counters: atomics
 use std::sync::atomic::{AtomicU64, Ordering};
-
-let counter = AtomicU64::new(0);
 counter.fetch_add(1, Ordering::SeqCst);
 ```
 
 ### Async Patterns
 
 ```rust
-// Good: use tokio's synchronization primitives
 use tokio::sync::{RwLock, Semaphore};
 
-// Read-heavy workloads: RwLock
+// Read-heavy: RwLock
 let cache: Arc<RwLock<HashMap<K, V>>> = Arc::new(RwLock::new(HashMap::new()));
 
 // Rate limiting: Semaphore
 let permits = Arc::new(Semaphore::new(10));
 let permit = permits.acquire().await?;
-// do work
-drop(permit); // release
 ```
 
 ---
 
-## 6. Traits
+## 8. Documentation
 
-### Implement Common Traits
+### What to Document
 
-Every public type should implement (where sensible):
+- Brief purpose of the item
+- Non-obvious constraints
+- Important assumptions
+- Complex usage patterns (with examples)
+
+### What to Skip
+
+- Obvious argument descriptions (names should be self-documenting)
+- Error cases that must be handled anyway
+- Redundant information clear from types
+
+### Good Example
 
 ```rust
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct SessionId(Ulid);
-
-// Also consider:
-// - Default (if there's a sensible default)
-// - Display (for user-facing output)
-// - From/Into (for conversions)
+/// Write a tile of image data at the specified position.
+///
+/// Edge tiles must be padded by the caller to match full tile size.
+pub fn write_tile(&mut self, pos: TilePos, data: &[u8]) -> Result<()>
 ```
 
-### Trait Bounds
+### Bad Example (Too Verbose)
 
 ```rust
-// Good: bounds on impl, not struct definition
-pub struct Cache<K, V> {
-    inner: HashMap<K, V>,
-}
-
-impl<K, V> Cache<K, V>
-where
-    K: Eq + Hash,
-{
-    pub fn get(&self, key: &K) -> Option<&V> {
-        self.inner.get(key)
-    }
-}
-
-// Bad: bounds on struct (forces bounds everywhere)
-pub struct Cache<K: Eq + Hash, V> {
-    inner: HashMap<K, V>,
-}
-```
-
----
-
-## 7. Documentation
-
-### Every Public Item
-
-```rust
-/// A session represents a conversation context.
-///
-/// Sessions execute runs serially and maintain working memory
-/// across interactions.
-///
-/// # Examples
-///
-/// ```
-/// let session = Session::new(channel_id);
-/// let run = session.start_run()?;
-/// ```
-pub struct Session {
-    // ...
-}
-```
-
-### Document Errors and Panics
-
-```rust
-/// Invokes a tool by name with the given parameters.
+/// Write a tile of image data to the file.
 ///
 /// # Arguments
-///
-/// * `name` - The tool name as registered
-/// * `params` - JSON parameters for the tool
+/// * `pos` - The tile position
+/// * `data` - The tile data bytes
 ///
 /// # Errors
-///
-/// Returns `Error::ToolNotFound` if the tool doesn't exist.
-/// Returns `Error::CapabilityDenied` if the capability check fails.
-/// Returns `Error::ToolTimeout` if the tool exceeds its timeout.
-///
-/// # Panics
-///
-/// Panics if the runtime is not initialized.
-pub async fn invoke(&self, name: &str, params: Value) -> Result<Value> {
-    // ...
-}
+/// Returns Error::Bounds if coordinates are out of range.
 ```
 
 ### Use `#![warn(missing_docs)]`
@@ -403,7 +502,7 @@ pub async fn invoke(&self, name: &str, params: Value) -> Result<Value> {
 
 ---
 
-## 8. Testing
+## 9. Testing
 
 ### Unit Tests in Same File
 
@@ -417,15 +516,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_duration_seconds() {
+    fn parse_duration_valid_seconds() {
         assert_eq!(parse_duration("30s").unwrap(), Duration::from_secs(30));
     }
 
     #[test]
-    fn test_parse_duration_invalid() {
+    fn parse_duration_invalid_returns_error() {
         assert!(parse_duration("invalid").is_err());
     }
 }
+```
+
+### Test Naming
+
+```rust
+#[test]
+fn <function>_<scenario>_<expected>() { }
+
+// Examples:
+fn parse_config_valid_returns_config()
+fn parse_config_missing_field_returns_error()
+fn invoke_tool_timeout_returns_timeout_error()
 ```
 
 ### Integration Tests in `/tests`
@@ -434,44 +545,28 @@ mod tests {
 tests/
   integration_test.rs
   common/
-    mod.rs  # shared test utilities
-```
-
-### Test Naming
-
-```rust
-#[test]
-fn test_<function>_<scenario>_<expected>() {
-    // ...
-}
-
-// Examples:
-fn test_parse_config_valid_returns_config()
-fn test_parse_config_missing_field_returns_error()
-fn test_invoke_tool_timeout_returns_timeout_error()
+    mod.rs  # Shared utilities
 ```
 
 ---
 
-## 9. Project Structure
+## 10. Project Structure
 
-### Crate Organization
+### Crate Layout
 
 ```
 crates/
   runtime/
     src/
       lib.rs          # Public API, re-exports
-      session.rs      # Session management
-      run.rs          # Run execution
-      error.rs        # Error types
+      session.rs
+      run.rs
+      error.rs
     Cargo.toml
-
   storage/
     src/
       lib.rs
-      sqlite.rs       # SQLite backend
-      schema.rs       # Database schema
+      sqlite.rs
     Cargo.toml
 ```
 
@@ -483,68 +578,69 @@ mod session;
 mod run;
 mod error;
 
-pub use session::{Session, SessionId, SessionState};
+pub use session::{Session, SessionId};
 pub use run::{Run, RunId};
 pub use error::{Error, Result};
 ```
 
-### Keep Modules Focused
+---
 
-- One primary responsibility per module
-- If a module grows >500 lines, consider splitting
-- Prefer many small modules over few large ones
+## 11. Anti-Patterns
+
+### Boolean Blindness
+
+```rust
+// Bad
+fn write_header(writer: &mut Write, is_big: bool)
+
+// Good  
+fn write_header(writer: &mut Write, kind: TiffKind)
+```
+
+### Stringly-Typed Code
+
+```rust
+// Bad
+fn set_color(&mut self, color: &str)  // "gray" | "rgb" ???
+
+// Good
+fn set_color(&mut self, color: Color)
+```
+
+### Deep Nesting (Arrow Code)
+
+See "Prefer Early Returns" above.
+
+### Premature Abstraction
+
+```rust
+// Bad: over-engineered before requirements are clear
+trait ImageWriter<T, E> {
+    type Config;
+    fn write<W: Write>(&self, w: W, cfg: Self::Config) -> Result<(), E>;
+}
+
+// Good: concrete implementation first
+pub struct Writer { /* ... */ }
+impl Writer {
+    pub fn write_tile(&mut self, ...) -> Result<()> { /* ... */ }
+}
+// Extract abstractions when multiple implementations emerge
+```
 
 ---
 
-## 10. Performance Considerations
+## 12. Code Review Checklist
 
-### Avoid Unnecessary Allocations
-
-```rust
-// Good: return reference when possible
-fn name(&self) -> &str {
-    &self.name
-}
-
-// Good: accept references or impl traits
-fn process(data: &[u8]) { /* ... */ }
-fn process(data: impl AsRef<[u8]>) { /* ... */ }
-
-// Avoid: unnecessary clone
-fn process(data: Vec<u8>) { /* ... */ }  // Forces clone at call site
-```
-
-### Use Iterators
-
-```rust
-// Good: lazy, no intermediate allocation
-let sum: u64 = events
-    .iter()
-    .filter(|e| e.kind == EventKind::ToolInvoked)
-    .map(|e| e.duration_ms)
-    .sum();
-
-// Avoid: intermediate collections
-let filtered: Vec<_> = events.iter().filter(/* ... */).collect();
-let sum: u64 = filtered.iter().map(/* ... */).sum();
-```
-
-### Benchmark Before Optimizing
-
-```rust
-// In benches/benchmark.rs
-use criterion::{criterion_group, criterion_main, Criterion};
-
-fn bench_parse_config(c: &mut Criterion) {
-    let input = include_str!("../fixtures/config.toml");
-    c.bench_function("parse_config", |b| {
-        b.iter(|| parse_config(input))
-    });
-}
-
-criterion_group!(benches, bench_parse_config);
-criterion_main!(benches);
-```
+- [ ] Public APIs have documentation
+- [ ] Error cases return `Result` (not `panic!`)
+- [ ] Types represent domain concepts clearly
+- [ ] Functions have single, clear responsibilities
+- [ ] No redundant or obvious comments
+- [ ] Early returns preferred over deep nesting
+- [ ] Strategy pattern used for varying behavior
+- [ ] Test coverage for new functionality
+- [ ] Breaking changes are documented
 
 ---
 
@@ -552,10 +648,10 @@ criterion_main!(benches);
 
 - [The Rust Style Guide](https://doc.rust-lang.org/style-guide/)
 - [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/)
-- [ripgrep](https://github.com/BurntSushi/ripgrep) — exemplary project structure
+- [ripgrep](https://github.com/BurntSushi/ripgrep) — exemplary project
 - [tokio](https://github.com/tokio-rs/tokio) — async patterns
 - [thiserror](https://github.com/dtolnay/thiserror) — error handling
 
 ---
 
-*Style is about consistency. When in doubt, match the surrounding code.*
+*Style is about consistency. When in doubt, match surrounding code.*
