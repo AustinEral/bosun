@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use chrono::{Local, TimeZone};
 use clap::{Parser, Subcommand};
 use policy::Policy;
-use runtime::{Session, llm::Client};
+use runtime::{AnthropicBackend, Session};
 use storage::{Event, EventKind, EventStore, Role};
 
 use error::{Error, Result};
@@ -65,8 +65,8 @@ async fn run() -> Result<()> {
 async fn cmd_chat() -> Result<()> {
     println!("bosun v{}", env!("CARGO_PKG_VERSION"));
 
-    // Initialize LLM client
-    let client = Client::from_env().map_err(|_| Error::MissingApiKey)?;
+    // Initialize LLM backend
+    let backend = AnthropicBackend::from_env().map_err(|_| Error::MissingApiKey)?;
 
     // Initialize event store
     let data_dir = dirs_data_dir().unwrap_or_else(|| ".bosun".into());
@@ -88,8 +88,9 @@ async fn cmd_chat() -> Result<()> {
     );
 
     // Create session
-    let mut session = Session::new(store, client, policy)?.with_system(SYSTEM_PROMPT);
+    let mut session = Session::new(store, backend, policy)?.with_system(SYSTEM_PROMPT);
     println!("Session ID: {}", session.id);
+    println!("Backend: {}", session.backend_name());
     println!("Type 'quit' or Ctrl+D to exit.\n");
 
     // Chat loop
@@ -134,7 +135,6 @@ fn cmd_sessions(limit: usize) -> Result<()> {
     let sessions = store.list_sessions()?;
 
     if sessions.is_empty() {
-        // User-facing output uses println, not logging
         println!("No sessions found.");
         return Ok(());
     }
