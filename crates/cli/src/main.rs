@@ -317,7 +317,7 @@ async fn load_mcp_servers() -> Result<ToolHost> {
 
     println!("Loading {} MCP server(s)...", server_configs.len());
     let host = ToolHost::new(server_configs);
-    host.initialize().await.map_err(|e| Error::Runtime(e))?;
+    host.initialize().await.map_err(Error::Runtime)?;
 
     Ok(host)
 }
