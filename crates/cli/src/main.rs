@@ -87,8 +87,8 @@ async fn cmd_chat() -> Result<()> {
         }
     );
 
-    // Create session
-    let mut session = Session::new(store, client, policy)?.with_system(SYSTEM_PROMPT);
+    // Create session (no tools for now - will add MCP config loading later)
+    let mut session = Session::new_simple(store, client, policy)?.with_system(SYSTEM_PROMPT);
     println!("Session ID: {}", session.id);
     println!("Type 'quit' or Ctrl+D to exit.\n");
 
@@ -230,11 +230,17 @@ fn print_event(event: &Event) {
             };
             println!("[{time}] {role_str}: {display_content}");
         }
-        EventKind::ToolCall { name, input } => {
-            println!("[{time}] TOOL CALL: {name} {input:?}");
+        EventKind::ToolRequested => {
+            println!("[{time}] TOOL REQUESTED");
         }
-        EventKind::ToolResult { name, output } => {
-            println!("[{time}] TOOL RESULT: {name} {output:?}");
+        EventKind::ToolInvoked { name, input } => {
+            println!("[{time}] TOOL INVOKED: {name} {input:?}");
+        }
+        EventKind::ToolSucceeded => {
+            println!("[{time}] TOOL SUCCEEDED");
+        }
+        EventKind::ToolFailed => {
+            println!("[{time}] TOOL FAILED");
         }
     }
 }

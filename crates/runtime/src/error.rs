@@ -20,6 +20,9 @@ pub enum Error {
     #[error("capability denied: {0}")]
     CapabilityDenied(String),
 
+    #[error("tool error: {0}")]
+    Tool(String),
+
     #[error(transparent)]
     Storage(#[from] storage::Error),
 

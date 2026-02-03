@@ -41,16 +41,17 @@ pub enum Role {
 pub enum EventKind {
     /// A message was added to the conversation.
     Message { role: Role, content: String },
+    /// A tool was requested by the model.
+    ToolRequested,
     /// A tool was invoked.
-    ToolCall {
+    ToolInvoked {
         name: String,
         input: serde_json::Value,
     },
-    /// A tool returned a result.
-    ToolResult {
-        name: String,
-        output: serde_json::Value,
-    },
+    /// A tool call succeeded.
+    ToolSucceeded,
+    /// A tool call failed.
+    ToolFailed,
     /// Session started.
     SessionStart,
     /// Session ended.

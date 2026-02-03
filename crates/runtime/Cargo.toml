@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+mcp = { path = "../mcp" }
 policy = { path = "../policy" }
 storage = { path = "../storage" }
 thiserror.workspace = true
