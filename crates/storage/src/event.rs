@@ -64,13 +64,32 @@ pub enum Role {
     System,
 }
 
+impl Role {
+    /// Returns the canonical name of this role.
+    ///
+    /// Names match the serde serialization format (lowercase).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use storage::Role;
+    ///
+    /// assert_eq!(Role::User.name(), "user");
+    /// assert_eq!(Role::Assistant.name(), "assistant");
+    /// assert_eq!(Role::System.name(), "system");
+    /// ```
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::Assistant => "assistant",
+            Self::System => "system",
+        }
+    }
+}
+
 impl fmt::Display for Role {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Role::User => write!(f, "user"),
-            Role::Assistant => write!(f, "assistant"),
-            Role::System => write!(f, "system"),
-        }
+        f.write_str(self.name())
     }
 }
 
@@ -165,6 +184,31 @@ impl Event {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn role_name_matches_serde() {
+        // Verify that name() returns the same string as serde serialization
+        let roles = [
+            (Role::User, "user"),
+            (Role::Assistant, "assistant"),
+            (Role::System, "system"),
+        ];
+
+        for (role, expected) in roles {
+            assert_eq!(role.name(), expected);
+            // Also verify serde produces the same result
+            let serialized = serde_json::to_string(&role).unwrap();
+            assert_eq!(serialized, format!("\"{}\"", expected));
+        }
+    }
+
+    #[test]
+    fn role_display_uses_name() {
+        // Verify Display produces the same output as name()
+        for role in [Role::User, Role::Assistant, Role::System] {
+            assert_eq!(role.to_string(), role.name());
+        }
+    }
 
     #[test]
     fn event_kind_name_matches_serde() {
