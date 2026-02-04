@@ -1,3 +1,4 @@
+mod config;
 mod error;
 
 use std::io::{self, BufRead, Write};
@@ -5,15 +6,14 @@ use std::path::PathBuf;
 
 use chrono::{Local, TimeZone};
 use clap::{Parser, Subcommand};
-use policy::Policy;
 use runtime::{AnthropicBackend, Session};
 use storage::{Event, EventKind, EventStore, Role};
 
+use config::Config;
 use error::{Error, Result};
 
 const SYSTEM_PROMPT: &str = "You are Bosun, a helpful AI assistant. Be concise and direct.";
-const POLICY_FILE: &str = "bosun.toml";
-const DEFAULT_MODEL: &str = "claude-sonnet-4-20250514";
+const CONFIG_FILE: &str = "bosun.toml";
 
 #[derive(Parser)]
 #[command(name = "bosun")]
@@ -66,14 +66,14 @@ async fn run() -> Result<()> {
 async fn cmd_chat() -> Result<()> {
     println!("bosun v{}", env!("CARGO_PKG_VERSION"));
 
-    // Get API key from environment
-    let api_key = std::env::var("ANTHROPIC_API_KEY").map_err(|_| Error::MissingApiKey)?;
+    // Load configuration
+    let config = load_config()?;
 
-    // Get model from environment or use default
-    let model = std::env::var("BOSUN_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
+    // Get API key (from config or env)
+    let api_key = config.api_key().map_err(|e| Error::Config(e.to_string()))?;
 
     // Initialize LLM backend
-    let backend = AnthropicBackend::builder(api_key, &model).build();
+    let backend = AnthropicBackend::builder(&api_key, &config.backend.model).build();
 
     // Initialize event store
     let data_dir = dirs_data_dir().unwrap_or_else(|| ".bosun".into());
@@ -82,22 +82,19 @@ async fn cmd_chat() -> Result<()> {
     let store = EventStore::open(&db_path)?;
 
     println!("Session stored at: {}", db_path.display());
-
-    // Load policy
-    let policy = load_policy()?;
     println!(
-        "Policy: {}",
-        if std::path::Path::new(POLICY_FILE).exists() {
-            POLICY_FILE
+        "Config: {}",
+        if std::path::Path::new(CONFIG_FILE).exists() {
+            CONFIG_FILE
         } else {
-            "default (restrictive)"
+            "default"
         }
     );
 
     // Create session
-    let mut session = Session::new(store, backend, policy)?.with_system(SYSTEM_PROMPT);
+    let mut session = Session::new(store, backend, config.policy)?.with_system(SYSTEM_PROMPT);
     println!("Session ID: {}", session.id);
-    println!("Model: {model}");
+    println!("Model: {}", config.backend.model);
     println!("Type 'quit' or Ctrl+D to exit.\n");
 
     // Chat loop
@@ -246,6 +243,16 @@ fn print_event(event: &Event) {
     }
 }
 
+fn load_config() -> Result<Config> {
+    let config_path = PathBuf::from(CONFIG_FILE);
+
+    if config_path.exists() {
+        Config::load(&config_path).map_err(|e| Error::Config(e.to_string()))
+    } else {
+        Ok(Config::default_config())
+    }
+}
+
 fn open_store() -> Result<EventStore> {
     let data_dir = dirs_data_dir().unwrap_or_else(|| ".bosun".into());
     let db_path = data_dir.join("events.db");
@@ -276,15 +283,5 @@ fn dirs_data_dir() -> Option<PathBuf> {
     #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
     {
         None
-    }
-}
-
-fn load_policy() -> Result<Policy> {
-    let policy_path = PathBuf::from(POLICY_FILE);
-
-    if policy_path.exists() {
-        Ok(Policy::load(&policy_path)?)
-    } else {
-        Ok(Policy::restrictive())
     }
 }

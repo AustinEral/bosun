@@ -1,36 +1,33 @@
-# Bosun Policy Configuration
-#
-# This file controls what capabilities the agent has.
-# Copy to `bosun.toml` and customize.
+# Bosun Configuration
+# Copy this file to bosun.toml and customize as needed.
+
+# Backend configuration
+[backend]
+# Provider (currently only "anthropic" supported)
+provider = "anthropic"
+
+# Model to use
+model = "claude-sonnet-4-20250514"
+
+# API key (optional - falls back to ANTHROPIC_API_KEY env var)
+# api_key = "sk-ant-..."
+
+# Capability policy
+# See https://github.com/AustinEral/bosun for full documentation
 
 [allow]
-# File system read access (glob patterns)
-fs_read = [
-    ".",        # Current directory
-    "/tmp/**",  # Temp files
-]
+# Allowed file read paths (glob patterns)
+fs_read = [".", "./src/**"]
 
-# File system write access (glob patterns)
-fs_write = [
-    ".",        # Current directory
-]
+# Allowed file write paths (glob patterns)  
+fs_write = ["."]
 
 # Allowed HTTP domains
-net_http = [
-    "api.anthropic.com",
-    # Add domains as needed
-]
+# net_http = ["api.anthropic.com"]
 
-# Allowed commands (empty = none allowed)
-exec = [
-    # "git",    # Uncomment to allow git commands
-    # "cargo",  # Uncomment to allow cargo commands
-]
-
-# Allowed secret keys
-secrets_read = []
+# Allowed commands (exact or prefix match)
+# exec = ["git", "cargo"]
 
 [deny]
-# Capabilities to deny outright (overrides allow)
-# Options: fs_read, fs_write, net_http, exec, secrets_read
-all = ["exec"]  # Deny all exec by default
+# Deny all capabilities of these kinds
+all = ["exec", "net_http", "secrets_read"]
