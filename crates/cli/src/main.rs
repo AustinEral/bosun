@@ -69,11 +69,11 @@ async fn cmd_chat() -> Result<()> {
     // Load configuration
     let config = load_config()?;
 
-    // Get API key (from config or env)
-    let api_key = config.api_key().map_err(|e| Error::Config(e.to_string()))?;
+    // Get authentication (from config or env)
+    let auth = config.auth().map_err(|e| Error::Config(e.to_string()))?;
 
     // Initialize LLM backend
-    let backend = AnthropicBackend::builder(&api_key, &config.backend.model).build();
+    let backend = AnthropicBackend::builder(auth, &config.backend.model).build();
 
     // Initialize event store
     let data_dir = dirs_data_dir().unwrap_or_else(|| ".bosun".into());
