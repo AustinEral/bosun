@@ -1,6 +1,10 @@
 name: Claude
 
 on:
+  # Auto-review on PR open/update
+  pull_request:
+    types: [opened, synchronize]
+  
   # Comment events - respond to @claude mentions
   issue_comment:
     types: [created]
@@ -16,8 +20,9 @@ on:
 
 jobs:
   claude:
-    # Only run if @claude is mentioned in a comment
+    # Run on PR events, @claude mentions, or manual dispatch
     if: |
+      github.event_name == 'pull_request' ||
       github.event_name == 'workflow_dispatch' ||
       contains(github.event.comment.body, '@claude')
     
