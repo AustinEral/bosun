@@ -10,5 +10,5 @@ pub use backend::{
     AnthropicAuth, AnthropicBackend, ChatRequest, ChatResponse, LlmBackend, Message,
 };
 pub use error::{Error, Result};
-pub use mcp::McpClient;
+pub use mcp::{CallToolResult, McpClient, McpError, Tool};
 pub use session::Session;

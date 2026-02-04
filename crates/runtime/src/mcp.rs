@@ -5,7 +5,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use runtime::mcp::McpClient;
+//! use runtime::McpClient;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let client = McpClient::spawn("mcp-filesystem", ["--root", "./workspace"]).await?;
@@ -20,7 +20,7 @@
 
 use rmcp::{
     ServiceExt,
-    model::{CallToolRequestParams, CallToolResult, Tool},
+    model::CallToolRequestParams,
     service::RunningService,
     transport::{ConfigureCommandExt, TokioChildProcess},
 };
@@ -29,6 +29,9 @@ use tokio::process::Command;
 
 /// Error type for MCP operations.
 pub type McpError = Box<dyn std::error::Error + Send + Sync>;
+
+// Re-export rmcp types for convenience
+pub use rmcp::model::{CallToolResult, Tool};
 
 /// An MCP client connected to a server process.
 pub struct McpClient {
@@ -83,12 +86,5 @@ impl McpClient {
 
         let result = self.service.call_tool(params).await?;
         Ok(result)
-    }
-
-    /// Shutdown the client and terminate the server process.
-    pub async fn shutdown(self) -> Result<(), McpError> {
-        // Arc prevents us from consuming, so we just let it drop
-        // The service will be cancelled when the Arc is dropped
-        Ok(())
     }
 }
