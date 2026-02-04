@@ -1,6 +1,7 @@
 //! Configuration loading from bosun.toml.
 
 use policy::Policy;
+use runtime::AnthropicAuth;
 use serde::Deserialize;
 use std::path::Path;
 
@@ -17,10 +18,9 @@ pub struct Config {
 }
 
 /// Backend provider configuration.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 pub struct BackendConfig {
     /// Provider name (currently only "anthropic" supported).
-    /// Reserved for future multi-provider support.
     #[serde(default = "default_provider")]
     #[allow(dead_code)]
     pub provider: String,
@@ -29,8 +29,13 @@ pub struct BackendConfig {
     #[serde(default = "default_model")]
     pub model: String,
 
-    /// API key (if not set, reads from ANTHROPIC_API_KEY env var).
+    /// Standard Anthropic API key (sk-ant-api01-...).
+    /// Mutually exclusive with oauth_token.
     pub api_key: Option<String>,
+
+    /// Claude Code OAuth token (sk-ant-oat-...).
+    /// Mutually exclusive with api_key.
+    pub oauth_token: Option<String>,
 }
 
 fn default_provider() -> String {
@@ -39,16 +44,6 @@ fn default_provider() -> String {
 
 fn default_model() -> String {
     "claude-sonnet-4-20250514".to_string()
-}
-
-impl Default for BackendConfig {
-    fn default() -> Self {
-        Self {
-            provider: default_provider(),
-            model: default_model(),
-            api_key: None,
-        }
-    }
 }
 
 impl Config {
@@ -71,13 +66,16 @@ impl Config {
         }
     }
 
-    /// Get the API key, falling back to environment variable.
-    pub fn api_key(&self) -> Result<String, ConfigError> {
-        if let Some(key) = &self.backend.api_key {
-            return Ok(key.clone());
+    /// Build the authentication from config.
+    ///
+    /// Requires exactly one of api_key or oauth_token to be set.
+    pub fn auth(&self) -> Result<AnthropicAuth, ConfigError> {
+        match (&self.backend.api_key, &self.backend.oauth_token) {
+            (Some(key), None) => Ok(AnthropicAuth::ApiKey(key.clone())),
+            (None, Some(token)) => Ok(AnthropicAuth::ClaudeCodeOauth(token.clone())),
+            (Some(_), Some(_)) => Err(ConfigError::AmbiguousAuth),
+            (None, None) => Err(ConfigError::MissingAuth),
         }
-
-        std::env::var("ANTHROPIC_API_KEY").map_err(|_| ConfigError::MissingApiKey)
     }
 }
 
@@ -89,6 +87,11 @@ pub enum ConfigError {
     #[error("failed to parse config: {0}")]
     Parse(String),
 
-    #[error("API key not configured (set backend.api_key in config or ANTHROPIC_API_KEY env var)")]
-    MissingApiKey,
+    #[error("authentication not configured: set backend.api_key or backend.oauth_token")]
+    MissingAuth,
+
+    #[error(
+        "ambiguous authentication: set either backend.api_key OR backend.oauth_token, not both"
+    )]
+    AmbiguousAuth,
 }

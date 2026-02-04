@@ -5,7 +5,7 @@
 
 mod anthropic;
 
-pub use anthropic::AnthropicBackend;
+pub use anthropic::{AnthropicAuth, AnthropicBackend};
 
 use crate::Result;
 use std::future::Future;
