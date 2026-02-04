@@ -51,11 +51,6 @@ impl<B: LlmBackend> Session<B> {
         }
     }
 
-    /// Get a reference to the backend.
-    pub fn backend(&self) -> &B {
-        &self.backend
-    }
-
     /// Send a user message and get the assistant's response.
     pub async fn chat(&mut self, user_input: &str) -> Result<String> {
         let user_msg = Message::user(user_input);

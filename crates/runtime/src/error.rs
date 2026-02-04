@@ -11,9 +11,6 @@ pub enum Error {
     #[error("API error: {0}")]
     Api(String),
 
-    #[error("execution error: {0}")]
-    Exec(String),
-
     #[error("session not found: {0}")]
     SessionNotFound(String),
 
