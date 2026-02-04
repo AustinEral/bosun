@@ -1,0 +1,222 @@
+//! Anthropic API backend.
+
+use super::{ChatRequest, ChatResponse, LlmBackend};
+use crate::{Error, Result};
+use serde::{Deserialize, Serialize};
+use storage::Role;
+
+const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
+
+// OAuth tokens require Claude Code identity headers
+const CLAUDE_CODE_VERSION: &str = "2.1.2";
+const OAUTH_BETA_HEADER: &str = "claude-code-20250219,oauth-2025-04-20,fine-grained-tool-streaming-2025-05-14,interleaved-thinking-2025-05-14";
+
+// Required system prompt prefix for OAuth tokens
+const OAUTH_SYSTEM_PREFIX: &str = "You are Claude Code, Anthropics official CLI for Claude.";
+
+#[derive(Debug, Serialize)]
+struct ApiRequest {
+    model: String,
+    max_tokens: u32,
+    messages: Vec<ApiMessage>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    system: Option<SystemPrompt>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum SystemPrompt {
+    Simple(String),
+    Blocks(Vec<SystemBlock>),
+}
+
+#[derive(Debug, Serialize)]
+struct SystemBlock {
+    #[serde(rename = "type")]
+    block_type: &'static str,
+    text: String,
+    cache_control: CacheControl,
+}
+
+#[derive(Debug, Serialize)]
+struct CacheControl {
+    #[serde(rename = "type")]
+    control_type: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+struct ApiMessage {
+    role: &'static str,
+    content: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ApiResponse {
+    content: Vec<ContentBlock>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ContentBlock {
+    text: String,
+}
+
+/// Builder for creating an Anthropic backend.
+#[derive(Debug, Clone)]
+pub struct AnthropicBackendBuilder {
+    api_key: String,
+    model: String,
+    max_tokens: u32,
+}
+
+impl AnthropicBackendBuilder {
+    /// Create a new builder with the required API key and model.
+    pub fn new(api_key: impl Into<String>, model: impl Into<String>) -> Self {
+        Self {
+            api_key: api_key.into(),
+            model: model.into(),
+            max_tokens: 4096,
+        }
+    }
+
+    /// Set the maximum tokens for responses.
+    pub fn max_tokens(mut self, max_tokens: u32) -> Self {
+        self.max_tokens = max_tokens;
+        self
+    }
+
+    /// Build the backend.
+    pub fn build(self) -> AnthropicBackend {
+        AnthropicBackend {
+            client: reqwest::Client::new(),
+            api_key: self.api_key,
+            model: self.model,
+            max_tokens: self.max_tokens,
+        }
+    }
+}
+
+/// Anthropic API backend.
+pub struct AnthropicBackend {
+    client: reqwest::Client,
+    api_key: String,
+    model: String,
+    max_tokens: u32,
+}
+
+impl AnthropicBackend {
+    /// Create a builder for the Anthropic backend.
+    pub fn builder(
+        api_key: impl Into<String>,
+        model: impl Into<String>,
+    ) -> AnthropicBackendBuilder {
+        AnthropicBackendBuilder::new(api_key, model)
+    }
+
+    fn is_oauth_token(&self) -> bool {
+        self.api_key.starts_with("sk-ant-oat")
+    }
+
+    fn role_to_api_str(role: Role) -> &'static str {
+        match role {
+            Role::User | Role::System => "user",
+            Role::Assistant => "assistant",
+        }
+    }
+}
+
+impl std::fmt::Display for AnthropicBackend {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "anthropic({})", self.model)
+    }
+}
+
+impl LlmBackend for AnthropicBackend {
+    async fn chat(&self, request: ChatRequest<'_>) -> Result<ChatResponse> {
+        let api_messages: Vec<ApiMessage> = request
+            .messages
+            .iter()
+            .filter(|m| m.role != Role::System)
+            .map(|m| ApiMessage {
+                role: Self::role_to_api_str(m.role),
+                content: m.content.clone(),
+            })
+            .collect();
+
+        // OAuth tokens require block format with cache control and system prefix
+        let effective_system = if self.is_oauth_token() {
+            let mut blocks = vec![SystemBlock {
+                block_type: "text",
+                text: OAUTH_SYSTEM_PREFIX.to_string(),
+                cache_control: CacheControl {
+                    control_type: "ephemeral",
+                },
+            }];
+            if let Some(s) = request.system {
+                blocks.push(SystemBlock {
+                    block_type: "text",
+                    text: s.to_string(),
+                    cache_control: CacheControl {
+                        control_type: "ephemeral",
+                    },
+                });
+            }
+            Some(SystemPrompt::Blocks(blocks))
+        } else {
+            request.system.map(|s| SystemPrompt::Simple(s.to_string()))
+        };
+
+        let api_request = ApiRequest {
+            model: self.model.clone(),
+            max_tokens: self.max_tokens,
+            messages: api_messages,
+            system: effective_system,
+        };
+
+        let mut req = self
+            .client
+            .post(ANTHROPIC_API_URL)
+            .header("anthropic-version", "2023-06-01")
+            .header("content-type", "application/json")
+            .header("accept", "application/json");
+
+        if self.is_oauth_token() {
+            // OAuth tokens require Claude Code identity headers for authentication
+            req = req
+                .header("Authorization", format!("Bearer {}", self.api_key))
+                .header("anthropic-beta", OAUTH_BETA_HEADER)
+                .header(
+                    "user-agent",
+                    format!("claude-cli/{CLAUDE_CODE_VERSION} (external, cli)"),
+                )
+                .header("x-app", "cli");
+        } else {
+            req = req.header("x-api-key", &self.api_key);
+        }
+
+        let response = req
+            .json(&api_request)
+            .send()
+            .await
+            .map_err(|e| Error::Network(e.to_string()))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(Error::Api(format!("{status}: {body}")));
+        }
+
+        let api_response: ApiResponse = response
+            .json()
+            .await
+            .map_err(|e| Error::Api(e.to_string()))?;
+
+        let content = api_response
+            .content
+            .into_iter()
+            .map(|b| b.text)
+            .collect::<Vec<_>>()
+            .join("");
+
+        Ok(ChatResponse { content })
+    }
+}

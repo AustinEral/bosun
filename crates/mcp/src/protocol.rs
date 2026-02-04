@@ -225,9 +225,18 @@ pub struct CallToolResult {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum ToolContent {
-    Text { text: String },
-    Image { data: String, mime_type: String },
-    Resource { uri: String, mime_type: Option<String>, text: Option<String> },
+    Text {
+        text: String,
+    },
+    Image {
+        data: String,
+        mime_type: String,
+    },
+    Resource {
+        uri: String,
+        mime_type: Option<String>,
+        text: Option<String>,
+    },
 }
 
 impl ToolContent {
@@ -246,8 +255,7 @@ mod tests {
 
     #[test]
     fn serialize_request() {
-        let req = JsonRpcRequest::new(1i64, "initialize")
-            .with_params(InitializeParams::default());
+        let req = JsonRpcRequest::new(1i64, "initialize").with_params(InitializeParams::default());
         let json = serde_json::to_string(&req).unwrap();
         assert!(json.contains("\"jsonrpc\":\"2.0\""));
         assert!(json.contains("\"method\":\"initialize\""));

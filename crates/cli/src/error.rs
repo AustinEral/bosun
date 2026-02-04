@@ -17,8 +17,8 @@ pub enum Error {
         matches: Vec<String>,
     },
 
-    #[error("ANTHROPIC_API_KEY not set")]
-    MissingApiKey,
+    #[error("config error: {0}")]
+    Config(String),
 
     #[error(transparent)]
     Runtime(#[from] runtime::Error),

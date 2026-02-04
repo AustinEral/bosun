@@ -57,19 +57,15 @@ impl Server {
 
         let mut process = cmd.spawn()?;
 
-        let stdin = process.stdin.take().ok_or_else(|| {
-            Error::Spawn(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "failed to capture stdin",
-            ))
-        })?;
+        let stdin = process
+            .stdin
+            .take()
+            .ok_or_else(|| Error::Spawn(std::io::Error::other("failed to capture stdin")))?;
 
-        let stdout = process.stdout.take().ok_or_else(|| {
-            Error::Spawn(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "failed to capture stdout",
-            ))
-        })?;
+        let stdout = process
+            .stdout
+            .take()
+            .ok_or_else(|| Error::Spawn(std::io::Error::other("failed to capture stdout")))?;
 
         Ok(Self {
             config,
@@ -204,7 +200,8 @@ impl Server {
         }
 
         // Read response with timeout
-        let response = timeout(DEFAULT_TIMEOUT, self.read_response()).await
+        let response = timeout(DEFAULT_TIMEOUT, self.read_response())
+            .await
             .map_err(|_| Error::Timeout)??;
 
         // Verify response ID matches
@@ -230,7 +227,7 @@ impl Server {
         let notification = serde_json::json!({
             "jsonrpc": "2.0",
             "method": method,
-            "params": params.map(|p| serde_json::to_value(p).ok()).flatten()
+            "params": params.and_then(|p| serde_json::to_value(p).ok())
         });
 
         let notification_json = serde_json::to_string(&notification)?;
@@ -247,7 +244,7 @@ impl Server {
     async fn read_response(&self) -> Result<JsonRpcResponse> {
         let mut stdout = self.stdout.lock().await;
         let mut line = String::new();
-        
+
         let bytes_read = stdout.read_line(&mut line).await?;
         if bytes_read == 0 {
             return Err(Error::ServerExited);
