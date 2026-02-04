@@ -1,6 +1,6 @@
 //! Anthropic API backend.
 
-use super::{ChatRequest, ChatResponse, LlmBackend};
+use super::{ChatRequest, ChatResponse, LlmBackend, Usage};
 use crate::{Error, Result};
 use reqwest::RequestBuilder;
 use serde::{Deserialize, Serialize};
@@ -117,11 +117,18 @@ struct ApiMessage {
 #[derive(Debug, Deserialize)]
 struct ApiResponse {
     content: Vec<ContentBlock>,
+    usage: ApiUsage,
 }
 
 #[derive(Debug, Deserialize)]
 struct ContentBlock {
     text: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ApiUsage {
+    input_tokens: u32,
+    output_tokens: u32,
 }
 
 /// Builder for creating an Anthropic backend.
@@ -239,7 +246,12 @@ impl LlmBackend for AnthropicBackend {
             .collect::<Vec<_>>()
             .join("");
 
-        Ok(ChatResponse { content })
+        let usage = Usage {
+            input_tokens: api_response.usage.input_tokens,
+            output_tokens: api_response.usage.output_tokens,
+        };
+
+        Ok(ChatResponse { content, usage })
     }
 }
 
@@ -253,5 +265,25 @@ mod tests {
         let oauth = AnthropicAuth::ClaudeCodeOauth("test".into());
         assert_eq!(api.to_string(), "api_key");
         assert_eq!(oauth.to_string(), "claude_code_oauth");
+    }
+
+    #[test]
+    fn usage_total_tokens() {
+        let usage = Usage {
+            input_tokens: 100,
+            output_tokens: 50,
+        };
+        assert_eq!(usage.total_tokens(), 150);
+    }
+
+    #[test]
+    fn usage_cost_calculation() {
+        let usage = Usage {
+            input_tokens: 1_000_000, // 1M input tokens
+            output_tokens: 500_000,  // 500K output tokens
+        };
+        // At $3/MTok input and $15/MTok output (Sonnet pricing)
+        let cost = usage.cost_usd(3.0, 15.0);
+        assert!((cost - 10.5).abs() < 0.001); // $3 + $7.50 = $10.50
     }
 }

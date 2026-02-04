@@ -48,10 +48,38 @@ pub struct ChatRequest<'a> {
     pub system: Option<&'a str>,
 }
 
+/// Token usage information from an LLM response.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Usage {
+    /// Tokens consumed by the input (prompt).
+    pub input_tokens: u32,
+    /// Tokens generated in the output (completion).
+    pub output_tokens: u32,
+}
+
+impl Usage {
+    /// Total tokens used (input + output).
+    pub fn total_tokens(self) -> u32 {
+        self.input_tokens + self.output_tokens
+    }
+
+    /// Calculate cost in USD based on per-token pricing.
+    ///
+    /// Prices are per million tokens.
+    pub fn cost_usd(self, input_price_per_mtok: f64, output_price_per_mtok: f64) -> f64 {
+        let input_cost = (self.input_tokens as f64 / 1_000_000.0) * input_price_per_mtok;
+        let output_cost = (self.output_tokens as f64 / 1_000_000.0) * output_price_per_mtok;
+        input_cost + output_cost
+    }
+}
+
 /// Response from an LLM backend.
 #[derive(Debug, Clone)]
 pub struct ChatResponse {
+    /// The generated content.
     pub content: String,
+    /// Token usage statistics.
+    pub usage: Usage,
 }
 
 /// Trait for LLM backends.
