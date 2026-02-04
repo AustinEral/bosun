@@ -74,15 +74,59 @@ impl fmt::Display for Role {
     }
 }
 
+/// An error returned when parsing a [`Role`] from a string fails.
+///
+/// This follows the pattern of [`std::str::ParseBoolError`] and other
+/// standard library parse error types.
+///
+/// # Example
+///
+/// ```
+/// use std::str::FromStr;
+/// use storage::Role;
+///
+/// let result: Result<Role, _> = "invalid".parse();
+/// assert!(result.is_err());
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParseRoleError {
+    input: String,
+}
+
+impl ParseRoleError {
+    fn new(input: impl Into<String>) -> Self {
+        Self {
+            input: input.into(),
+        }
+    }
+
+    /// Returns the input that failed to parse.
+    pub fn input(&self) -> &str {
+        &self.input
+    }
+}
+
+impl fmt::Display for ParseRoleError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "unknown role: '{}' (expected 'user', 'assistant', or 'system')",
+            self.input
+        )
+    }
+}
+
+impl std::error::Error for ParseRoleError {}
+
 impl FromStr for Role {
-    type Err = String;
+    type Err = ParseRoleError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
             "user" => Ok(Role::User),
             "assistant" => Ok(Role::Assistant),
             "system" => Ok(Role::System),
-            _ => Err(format!("unknown role: {s}")),
+            _ => Err(ParseRoleError::new(s)),
         }
     }
 }
@@ -209,5 +253,33 @@ mod tests {
     fn session_id_parse_invalid() {
         let result: Result<SessionId, _> = "not-a-uuid".parse();
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn role_parse_valid() {
+        assert_eq!("user".parse::<Role>().unwrap(), Role::User);
+        assert_eq!("assistant".parse::<Role>().unwrap(), Role::Assistant);
+        assert_eq!("system".parse::<Role>().unwrap(), Role::System);
+        // Case insensitive
+        assert_eq!("USER".parse::<Role>().unwrap(), Role::User);
+        assert_eq!("Assistant".parse::<Role>().unwrap(), Role::Assistant);
+    }
+
+    #[test]
+    fn role_parse_invalid() {
+        let result: Result<Role, ParseRoleError> = "invalid".parse();
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.input(), "invalid");
+        assert!(err.to_string().contains("unknown role"));
+    }
+
+    #[test]
+    fn role_roundtrip() {
+        for role in [Role::User, Role::Assistant, Role::System] {
+            let s = role.to_string();
+            let parsed: Role = s.parse().unwrap();
+            assert_eq!(role, parsed);
+        }
     }
 }
