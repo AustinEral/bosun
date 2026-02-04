@@ -14,6 +14,7 @@ use error::{Error, Result};
 
 const SYSTEM_PROMPT: &str = "You are Bosun, a helpful AI assistant. Be concise and direct.";
 const CONFIG_FILE: &str = "bosun.toml";
+const APP_NAME: &str = "bosun";
 
 #[derive(Parser)]
 #[command(name = "bosun")]
@@ -76,7 +77,7 @@ async fn cmd_chat() -> Result<()> {
     let backend = AnthropicBackend::builder(auth, &config.backend.model).build();
 
     // Initialize event store
-    let data_dir = dirs_data_dir().unwrap_or_else(|| ".bosun".into());
+    let data_dir = data_dir();
     std::fs::create_dir_all(&data_dir)?;
     let db_path = data_dir.join("events.db");
     let store = EventStore::open(&db_path)?;
@@ -254,7 +255,7 @@ fn load_config() -> Result<Config> {
 }
 
 fn open_store() -> Result<EventStore> {
-    let data_dir = dirs_data_dir().unwrap_or_else(|| ".bosun".into());
+    let data_dir = data_dir();
     let db_path = data_dir.join("events.db");
 
     if !db_path.exists() {
@@ -264,24 +265,16 @@ fn open_store() -> Result<EventStore> {
     Ok(EventStore::open(&db_path)?)
 }
 
-fn dirs_data_dir() -> Option<PathBuf> {
-    #[cfg(target_os = "macos")]
-    {
-        std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share/bosun"))
-    }
-    #[cfg(target_os = "linux")]
-    {
-        std::env::var_os("XDG_DATA_HOME")
-            .map(PathBuf::from)
-            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/share")))
-            .map(|p| p.join("bosun"))
-    }
-    #[cfg(target_os = "windows")]
-    {
-        std::env::var_os("APPDATA").map(|h| PathBuf::from(h).join("bosun"))
-    }
-    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
-    {
-        None
-    }
+/// Returns the platform-appropriate data directory for Bosun.
+///
+/// Uses the standard locations for each platform:
+/// - Linux: $XDG_DATA_HOME/bosun or ~/.local/share/bosun
+/// - macOS: ~/Library/Application Support/bosun
+/// - Windows: {FOLDERID_RoamingAppData}/bosun (typically C:\Users\<User>\AppData\Roaming\bosun)
+///
+/// Falls back to ".bosun" in the current directory if no platform directory is available.
+fn data_dir() -> PathBuf {
+    dirs::data_dir()
+        .map(|p| p.join(APP_NAME))
+        .unwrap_or_else(|| PathBuf::from(".bosun"))
 }
