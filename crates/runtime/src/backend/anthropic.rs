@@ -12,7 +12,7 @@ const CLAUDE_CODE_VERSION: &str = "2.1.2";
 const OAUTH_BETA_HEADER: &str = "claude-code-20250219,oauth-2025-04-20,fine-grained-tool-streaming-2025-05-14,interleaved-thinking-2025-05-14";
 
 // Required system prompt prefix for OAuth tokens
-const OAUTH_SYSTEM_PREFIX: &str = "You are Claude Code, Anthropics official CLI for Claude.";
+const OAUTH_SYSTEM_PREFIX: &str = "You are Claude Code, Anthropic's official CLI for Claude.";
 
 #[derive(Debug, Serialize)]
 struct ApiRequest {
@@ -182,6 +182,7 @@ impl LlmBackend for AnthropicBackend {
         if self.is_oauth_token() {
             // OAuth tokens require Claude Code identity headers for authentication
             req = req
+                .header("anthropic-dangerous-direct-browser-access", "true")
                 .header("Authorization", format!("Bearer {}", self.api_key))
                 .header("anthropic-beta", OAUTH_BETA_HEADER)
                 .header(
