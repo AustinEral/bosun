@@ -17,7 +17,6 @@ const OAUTH_BETA_HEADER: &str = "claude-code-20250219,oauth-2025-04-20,fine-grai
 // Required system prompt prefix for OAuth tokens
 const OAUTH_SYSTEM_PREFIX: &str = "You are Claude Code, Anthropics official CLI for Claude.";
 
-/// Request to the Claude API.
 #[derive(Debug, Serialize)]
 struct ApiRequest {
     model: String,
@@ -27,7 +26,6 @@ struct ApiRequest {
     system: Option<SystemPrompt>,
 }
 
-/// System prompt - either a simple string or array of blocks with cache control
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
 enum SystemPrompt {
@@ -55,7 +53,6 @@ struct ApiMessage {
     content: String,
 }
 
-/// Response from the Claude API.
 #[derive(Debug, Deserialize)]
 struct ApiResponse {
     content: Vec<ContentBlock>,
@@ -99,6 +96,13 @@ impl AnthropicBackend {
     fn is_oauth_token(&self) -> bool {
         self.api_key.contains("sk-ant-oat")
     }
+
+    fn role_to_str(role: Role) -> &'static str {
+        match role {
+            Role::User | Role::System => "user",
+            Role::Assistant => "assistant",
+        }
+    }
 }
 
 #[async_trait]
@@ -109,16 +113,11 @@ impl LlmBackend for AnthropicBackend {
             .iter()
             .filter(|m| m.role != Role::System)
             .map(|m| ApiMessage {
-                role: match m.role {
-                    Role::User => "user",
-                    Role::Assistant => "assistant",
-                    Role::System => "user", // filtered above
-                },
+                role: Self::role_to_str(m.role),
                 content: m.content.clone(),
             })
             .collect();
 
-        // For OAuth tokens, use block format with cache control
         let effective_system = if self.is_oauth_token() {
             let mut blocks = vec![SystemBlock {
                 block_type: "text",
@@ -156,18 +155,19 @@ impl LlmBackend for AnthropicBackend {
             .header("accept", "application/json");
 
         if self.is_oauth_token() {
-            // OAuth token - use Bearer auth with Claude Code identity headers
+            // OAuth tokens (sk-ant-oat-*) require Claude Code identity headers.
+            // These headers authenticate as a Claude Code client, which is required
+            // for OAuth-based API access outside the standard API key flow.
             req = req
                 .header("Authorization", format!("Bearer {}", self.api_key))
                 .header("anthropic-beta", OAUTH_BETA_HEADER)
                 .header("anthropic-dangerous-direct-browser-access", "true")
                 .header(
                     "user-agent",
-                    format!("claude-cli/{} (external, cli)", CLAUDE_CODE_VERSION),
+                    format!("claude-cli/{CLAUDE_CODE_VERSION} (external, cli)"),
                 )
                 .header("x-app", "cli");
         } else {
-            // Standard API key
             req = req.header("x-api-key", &self.api_key);
         }
 
@@ -196,6 +196,10 @@ impl LlmBackend for AnthropicBackend {
             .join("");
 
         Ok(ChatResponse { content })
+    }
+
+    fn supports_tools(&self) -> bool {
+        true
     }
 
     fn name(&self) -> &str {

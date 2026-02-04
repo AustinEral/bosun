@@ -1,57 +1,46 @@
 //! Claude CLI backend.
 //!
-//! Uses the `claude` CLI as a text-only backend. Tools are not supported.
+//! Uses the `claude` CLI for LLM requests. This backend invokes the CLI
+//! as a subprocess, passing messages as a formatted prompt string.
+//!
+//! Note: While the Claude CLI itself supports tools, this backend wrapper
+//! currently operates in text-only mode for simplicity. Tool support could
+//! be added by parsing the JSON output for tool calls.
 
-use super::{ChatRequest, ChatResponse, LlmBackend};
+use super::{ChatRequest, ChatResponse, LlmBackend, Message};
 use crate::{Error, Result};
 use async_trait::async_trait;
 use serde::Deserialize;
 use std::process::Stdio;
+use storage::Role;
 use tokio::process::Command;
 
-/// Default command to run the Claude CLI.
 const DEFAULT_COMMAND: &str = "claude";
 
 /// Claude CLI backend.
 ///
-/// Invokes the `claude` CLI for each request. This is a text-only backend;
-/// tool calls are not supported.
+/// Invokes the `claude` CLI for each request.
 pub struct ClaudeCliBackend {
     command: String,
-    model: Option<String>,
+    model: String,
 }
 
 impl ClaudeCliBackend {
-    /// Create a new CLI backend using the default command.
-    pub fn new() -> Self {
+    /// Create a new CLI backend with the given model.
+    pub fn new(model: impl Into<String>) -> Self {
         Self {
             command: DEFAULT_COMMAND.to_string(),
-            model: None,
+            model: model.into(),
         }
     }
 
     /// Create a CLI backend with a custom command path.
-    pub fn with_command(command: impl Into<String>) -> Self {
-        Self {
-            command: command.into(),
-            model: None,
-        }
-    }
-
-    /// Set the model to use.
-    pub fn with_model(mut self, model: impl Into<String>) -> Self {
-        self.model = Some(model.into());
+    pub fn with_command(mut self, command: impl Into<String>) -> Self {
+        self.command = command.into();
         self
     }
 }
 
-impl Default for ClaudeCliBackend {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Response from Claude CLI JSON output.
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 struct CliResponse {
@@ -63,24 +52,18 @@ struct CliResponse {
 #[async_trait]
 impl LlmBackend for ClaudeCliBackend {
     async fn chat(&self, request: ChatRequest<'_>) -> Result<ChatResponse> {
-        // Build the prompt from messages
         let prompt = build_prompt(request.messages, request.system);
 
-        // Build command
         let mut cmd = Command::new(&self.command);
         cmd.arg("-p")
             .arg("--output-format")
             .arg("json")
-            .arg("--dangerously-skip-permissions");
-
-        if let Some(ref model) = self.model {
-            cmd.arg("--model").arg(model);
-        }
-
-        // Add the prompt as the final argument
-        cmd.arg(&prompt);
-
-        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+            .arg("--model")
+            .arg(&self.model)
+            .arg("--dangerously-skip-permissions")
+            .arg(&prompt)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
 
         let output = cmd
             .output()
@@ -97,14 +80,12 @@ impl LlmBackend for ClaudeCliBackend {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
 
-        // Try to parse as JSON first
         if let Ok(response) = serde_json::from_str::<CliResponse>(&stdout) {
             return Ok(ChatResponse {
                 content: response.result,
             });
         }
 
-        // Fall back to treating stdout as plain text
         Ok(ChatResponse {
             content: stdout.trim().to_string(),
         })
@@ -119,8 +100,11 @@ impl LlmBackend for ClaudeCliBackend {
     }
 }
 
-/// Build a prompt string from messages and optional system prompt.
-fn build_prompt(messages: &[super::Message], system: Option<&str>) -> String {
+/// Formats conversation messages into a single prompt string for the CLI.
+///
+/// The CLI expects a single text input, so we format the message history
+/// with role labels to preserve conversation context.
+fn build_prompt(messages: &[Message], system: Option<&str>) -> String {
     let mut parts = Vec::new();
 
     if let Some(sys) = system {
@@ -129,9 +113,9 @@ fn build_prompt(messages: &[super::Message], system: Option<&str>) -> String {
 
     for msg in messages {
         let role = match msg.role {
-            storage::Role::User => "User",
-            storage::Role::Assistant => "Assistant",
-            storage::Role::System => "System",
+            Role::User => "User",
+            Role::Assistant => "Assistant",
+            Role::System => "System",
         };
         parts.push(format!("[{role}]\n{}\n", msg.content));
     }

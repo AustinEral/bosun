@@ -66,11 +66,7 @@ pub trait LlmBackend: Send + Sync {
     async fn chat(&self, request: ChatRequest<'_>) -> Result<ChatResponse>;
 
     /// Returns true if this backend supports tool calls.
-    ///
-    /// CLI backends typically return false (text-only).
-    fn supports_tools(&self) -> bool {
-        true
-    }
+    fn supports_tools(&self) -> bool;
 
     /// Human-readable name for this backend.
     fn name(&self) -> &str;

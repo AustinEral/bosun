@@ -36,26 +36,6 @@ impl Session {
         })
     }
 
-    /// Create a new session with a boxed backend.
-    pub fn with_boxed_backend(
-        store: EventStore,
-        backend: Box<dyn LlmBackend>,
-        policy: Policy,
-    ) -> Result<Self> {
-        let id = SessionId::new();
-        let event = Event::new(id, EventKind::SessionStart);
-        store.append(&event)?;
-
-        Ok(Self {
-            id,
-            store,
-            backend,
-            policy,
-            messages: Vec::new(),
-            system: None,
-        })
-    }
-
     /// Set the system prompt.
     pub fn with_system(mut self, system: impl Into<String>) -> Self {
         self.system = Some(system.into());
@@ -85,22 +65,19 @@ impl Session {
         self.backend.name()
     }
 
-    /// Send a user message and get the assistants response.
+    /// Send a user message and get the assistant's response.
     pub async fn chat(&mut self, user_input: &str) -> Result<String> {
-        // Log and store user message
         let user_msg = Message::user(user_input);
         self.messages.push(user_msg);
         self.store
             .append(&Event::message(self.id, Role::User, user_input))?;
 
-        // Get response from LLM
         let request = ChatRequest {
             messages: &self.messages,
             system: self.system.as_deref(),
         };
         let response = self.backend.chat(request).await?;
 
-        // Log and store assistant message
         let assistant_msg = Message::assistant(&response.content);
         self.messages.push(assistant_msg);
         self.store
