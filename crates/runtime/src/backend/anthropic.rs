@@ -2,13 +2,10 @@
 
 use super::{ChatRequest, ChatResponse, LlmBackend};
 use crate::{Error, Result};
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use storage::Role;
 
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
-const DEFAULT_MODEL: &str = "claude-sonnet-4-20250514";
-const DEFAULT_MAX_TOKENS: u32 = 4096;
 
 // OAuth tokens require Claude Code identity headers
 const CLAUDE_CODE_VERSION: &str = "2.1.2";
@@ -63,41 +60,63 @@ struct ContentBlock {
     text: String,
 }
 
-/// Anthropic API backend.
-pub struct AnthropicBackend {
-    http: reqwest::Client,
+/// Builder for creating an Anthropic backend.
+#[derive(Debug, Clone)]
+pub struct AnthropicBackendBuilder {
     api_key: String,
     model: String,
+    max_tokens: u32,
 }
 
-impl AnthropicBackend {
-    /// Create a new backend with the given API key.
-    pub fn new(api_key: impl Into<String>) -> Self {
+impl AnthropicBackendBuilder {
+    /// Create a new builder with the required API key and model.
+    pub fn new(api_key: impl Into<String>, model: impl Into<String>) -> Self {
         Self {
-            http: reqwest::Client::new(),
             api_key: api_key.into(),
-            model: DEFAULT_MODEL.to_string(),
+            model: model.into(),
+            max_tokens: 4096,
         }
     }
 
-    /// Create a backend from the ANTHROPIC_API_KEY environment variable.
-    pub fn from_env() -> Result<Self> {
-        let api_key = std::env::var("ANTHROPIC_API_KEY")
-            .map_err(|_| Error::Config("ANTHROPIC_API_KEY not set".into()))?;
-        Ok(Self::new(api_key))
-    }
-
-    /// Set the model to use.
-    pub fn with_model(mut self, model: impl Into<String>) -> Self {
-        self.model = model.into();
+    /// Set the maximum tokens for responses.
+    pub fn max_tokens(mut self, max_tokens: u32) -> Self {
+        self.max_tokens = max_tokens;
         self
     }
 
-    fn is_oauth_token(&self) -> bool {
-        self.api_key.contains("sk-ant-oat")
+    /// Build the backend.
+    pub fn build(self) -> AnthropicBackend {
+        AnthropicBackend {
+            client: reqwest::Client::new(),
+            api_key: self.api_key,
+            model: self.model,
+            max_tokens: self.max_tokens,
+        }
+    }
+}
+
+/// Anthropic API backend.
+pub struct AnthropicBackend {
+    client: reqwest::Client,
+    api_key: String,
+    model: String,
+    max_tokens: u32,
+}
+
+impl AnthropicBackend {
+    /// Create a builder for the Anthropic backend.
+    pub fn builder(
+        api_key: impl Into<String>,
+        model: impl Into<String>,
+    ) -> AnthropicBackendBuilder {
+        AnthropicBackendBuilder::new(api_key, model)
     }
 
-    fn role_to_str(role: Role) -> &'static str {
+    fn is_oauth_token(&self) -> bool {
+        self.api_key.starts_with("sk-ant-oat")
+    }
+
+    fn role_to_api_str(role: Role) -> &'static str {
         match role {
             Role::User | Role::System => "user",
             Role::Assistant => "assistant",
@@ -105,7 +124,12 @@ impl AnthropicBackend {
     }
 }
 
-#[async_trait]
+impl std::fmt::Display for AnthropicBackend {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "anthropic({})", self.model)
+    }
+}
+
 impl LlmBackend for AnthropicBackend {
     async fn chat(&self, request: ChatRequest<'_>) -> Result<ChatResponse> {
         let api_messages: Vec<ApiMessage> = request
@@ -113,11 +137,12 @@ impl LlmBackend for AnthropicBackend {
             .iter()
             .filter(|m| m.role != Role::System)
             .map(|m| ApiMessage {
-                role: Self::role_to_str(m.role),
+                role: Self::role_to_api_str(m.role),
                 content: m.content.clone(),
             })
             .collect();
 
+        // OAuth tokens require block format with cache control and system prefix
         let effective_system = if self.is_oauth_token() {
             let mut blocks = vec![SystemBlock {
                 block_type: "text",
@@ -142,26 +167,23 @@ impl LlmBackend for AnthropicBackend {
 
         let api_request = ApiRequest {
             model: self.model.clone(),
-            max_tokens: DEFAULT_MAX_TOKENS,
+            max_tokens: self.max_tokens,
             messages: api_messages,
             system: effective_system,
         };
 
         let mut req = self
-            .http
+            .client
             .post(ANTHROPIC_API_URL)
             .header("anthropic-version", "2023-06-01")
             .header("content-type", "application/json")
             .header("accept", "application/json");
 
         if self.is_oauth_token() {
-            // OAuth tokens (sk-ant-oat-*) require Claude Code identity headers.
-            // These headers authenticate as a Claude Code client, which is required
-            // for OAuth-based API access outside the standard API key flow.
+            // OAuth tokens require Claude Code identity headers for authentication
             req = req
                 .header("Authorization", format!("Bearer {}", self.api_key))
                 .header("anthropic-beta", OAUTH_BETA_HEADER)
-                .header("anthropic-dangerous-direct-browser-access", "true")
                 .header(
                     "user-agent",
                     format!("claude-cli/{CLAUDE_CODE_VERSION} (external, cli)"),
@@ -196,13 +218,5 @@ impl LlmBackend for AnthropicBackend {
             .join("");
 
         Ok(ChatResponse { content })
-    }
-
-    fn supports_tools(&self) -> bool {
-        true
-    }
-
-    fn name(&self) -> &str {
-        "anthropic-api"
     }
 }

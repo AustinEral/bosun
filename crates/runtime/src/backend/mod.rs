@@ -1,16 +1,14 @@
 //! LLM backend abstraction.
 //!
 //! Provides a trait for LLM backends, allowing Bosun to support multiple
-//! providers (Anthropic API, Claude CLI, OpenAI, etc.) through a unified interface.
+//! providers (Anthropic API, OpenAI, etc.) through a unified interface.
 
 mod anthropic;
-mod claude_cli;
 
 pub use anthropic::AnthropicBackend;
-pub use claude_cli::ClaudeCliBackend;
 
 use crate::Result;
-use async_trait::async_trait;
+use std::future::Future;
 use storage::Role;
 
 /// A message in the conversation.
@@ -59,15 +57,8 @@ pub struct ChatResponse {
 /// Trait for LLM backends.
 ///
 /// Implementations handle the specifics of communicating with different
-/// LLM providers (API calls, CLI invocations, etc.).
-#[async_trait]
+/// LLM providers (API calls, etc.).
 pub trait LlmBackend: Send + Sync {
     /// Send a chat request and get a response.
-    async fn chat(&self, request: ChatRequest<'_>) -> Result<ChatResponse>;
-
-    /// Returns true if this backend supports tool calls.
-    fn supports_tools(&self) -> bool;
-
-    /// Human-readable name for this backend.
-    fn name(&self) -> &str;
+    fn chat(&self, request: ChatRequest<'_>) -> impl Future<Output = Result<ChatResponse>> + Send;
 }

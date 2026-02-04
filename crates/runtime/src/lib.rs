@@ -5,8 +5,6 @@ mod error;
 pub mod llm;
 mod session;
 
-pub use backend::{
-    AnthropicBackend, ChatRequest, ChatResponse, ClaudeCliBackend, LlmBackend, Message,
-};
+pub use backend::{AnthropicBackend, ChatRequest, ChatResponse, LlmBackend, Message};
 pub use error::{Error, Result};
 pub use session::Session;

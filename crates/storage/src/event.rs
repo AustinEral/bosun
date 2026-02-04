@@ -2,6 +2,8 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::fmt;
+use std::str::FromStr;
 use uuid::Uuid;
 
 /// A unique identifier for a session.
@@ -20,8 +22,8 @@ impl Default for SessionId {
     }
 }
 
-impl std::fmt::Display for SessionId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for SessionId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }
@@ -33,6 +35,29 @@ pub enum Role {
     User,
     Assistant,
     System,
+}
+
+impl fmt::Display for Role {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Role::User => write!(f, "user"),
+            Role::Assistant => write!(f, "assistant"),
+            Role::System => write!(f, "system"),
+        }
+    }
+}
+
+impl FromStr for Role {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "user" => Ok(Role::User),
+            "assistant" => Ok(Role::Assistant),
+            "system" => Ok(Role::System),
+            _ => Err(format!("unknown role: {s}")),
+        }
+    }
 }
 
 /// The kind of event that occurred.

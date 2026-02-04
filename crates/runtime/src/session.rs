@@ -6,22 +6,18 @@ use policy::{CapabilityRequest, Decision, Policy};
 use storage::{Event, EventKind, EventStore, Role, SessionId};
 
 /// A conversation session.
-pub struct Session {
+pub struct Session<B: LlmBackend> {
     pub id: SessionId,
     store: EventStore,
-    backend: Box<dyn LlmBackend>,
+    backend: B,
     policy: Policy,
     messages: Vec<Message>,
     system: Option<String>,
 }
 
-impl Session {
+impl<B: LlmBackend> Session<B> {
     /// Create a new session with the given store, backend, and policy.
-    pub fn new(
-        store: EventStore,
-        backend: impl LlmBackend + 'static,
-        policy: Policy,
-    ) -> Result<Self> {
+    pub fn new(store: EventStore, backend: B, policy: Policy) -> Result<Self> {
         let id = SessionId::new();
         let event = Event::new(id, EventKind::SessionStart);
         store.append(&event)?;
@@ -29,7 +25,7 @@ impl Session {
         Ok(Self {
             id,
             store,
-            backend: Box::new(backend),
+            backend,
             policy,
             messages: Vec::new(),
             system: None,
@@ -55,14 +51,9 @@ impl Session {
         }
     }
 
-    /// Returns true if the backend supports tool calls.
-    pub fn supports_tools(&self) -> bool {
-        self.backend.supports_tools()
-    }
-
-    /// Get the backend name.
-    pub fn backend_name(&self) -> &str {
-        self.backend.name()
+    /// Get a reference to the backend.
+    pub fn backend(&self) -> &B {
+        &self.backend
     }
 
     /// Send a user message and get the assistant's response.

@@ -13,6 +13,7 @@ use error::{Error, Result};
 
 const SYSTEM_PROMPT: &str = "You are Bosun, a helpful AI assistant. Be concise and direct.";
 const POLICY_FILE: &str = "bosun.toml";
+const DEFAULT_MODEL: &str = "claude-sonnet-4-20250514";
 
 #[derive(Parser)]
 #[command(name = "bosun")]
@@ -65,8 +66,14 @@ async fn run() -> Result<()> {
 async fn cmd_chat() -> Result<()> {
     println!("bosun v{}", env!("CARGO_PKG_VERSION"));
 
+    // Get API key from environment
+    let api_key = std::env::var("ANTHROPIC_API_KEY").map_err(|_| Error::MissingApiKey)?;
+
+    // Get model from environment or use default
+    let model = std::env::var("BOSUN_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string());
+
     // Initialize LLM backend
-    let backend = AnthropicBackend::from_env().map_err(|_| Error::MissingApiKey)?;
+    let backend = AnthropicBackend::builder(api_key, &model).build();
 
     // Initialize event store
     let data_dir = dirs_data_dir().unwrap_or_else(|| ".bosun".into());
@@ -90,7 +97,7 @@ async fn cmd_chat() -> Result<()> {
     // Create session
     let mut session = Session::new(store, backend, policy)?.with_system(SYSTEM_PROMPT);
     println!("Session ID: {}", session.id);
-    println!("Backend: {}", session.backend_name());
+    println!("Model: {model}");
     println!("Type 'quit' or Ctrl+D to exit.\n");
 
     // Chat loop
