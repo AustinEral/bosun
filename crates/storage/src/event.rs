@@ -11,6 +11,9 @@ use uuid::Uuid;
 /// Session IDs are UUIDs that uniquely identify a conversation session.
 /// They can be displayed as strings and parsed back from strings.
 ///
+/// This type intentionally does not implement `Default` because there is
+/// no sensible default value for a unique identifier.
+///
 /// # Examples
 ///
 /// ```
@@ -28,16 +31,13 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SessionId(pub Uuid);
 
+// Clippy wants Default for types with new(), but SessionId generates
+// a unique random value each time - there is no sensible default.
+#[allow(clippy::new_without_default)]
 impl SessionId {
-    /// Create a new random session ID.
+    /// Creates a new unique session identifier.
     pub fn new() -> Self {
         Self(Uuid::new_v4())
-    }
-}
-
-impl Default for SessionId {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
