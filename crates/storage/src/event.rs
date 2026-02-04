@@ -7,10 +7,29 @@ use std::str::FromStr;
 use uuid::Uuid;
 
 /// A unique identifier for a session.
+///
+/// Session IDs are UUIDs that uniquely identify a conversation session.
+/// They can be displayed as strings and parsed back from strings.
+///
+/// # Examples
+///
+/// ```
+/// use std::str::FromStr;
+/// use storage::SessionId;
+///
+/// // Create a new session ID
+/// let id = SessionId::new();
+///
+/// // Convert to string and parse back
+/// let id_str = id.to_string();
+/// let parsed: SessionId = id_str.parse().unwrap();
+/// assert_eq!(id, parsed);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SessionId(pub Uuid);
 
 impl SessionId {
+    /// Create a new random session ID.
     pub fn new() -> Self {
         Self(Uuid::new_v4())
     }
@@ -25,6 +44,14 @@ impl Default for SessionId {
 impl fmt::Display for SessionId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+impl FromStr for SessionId {
+    type Err = uuid::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self(s.parse()?))
     }
 }
 
@@ -168,5 +195,19 @@ mod tests {
             .name(),
             "tool_result"
         );
+    }
+
+    #[test]
+    fn session_id_roundtrip() {
+        let id = SessionId::new();
+        let s = id.to_string();
+        let parsed: SessionId = s.parse().unwrap();
+        assert_eq!(id, parsed);
+    }
+
+    #[test]
+    fn session_id_parse_invalid() {
+        let result: Result<SessionId, _> = "not-a-uuid".parse();
+        assert!(result.is_err());
     }
 }

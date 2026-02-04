@@ -87,7 +87,7 @@ impl EventStore {
             .filter_map(|(id, session_id, timestamp, data)| {
                 Some(Event {
                     id: id.parse().ok()?,
-                    session_id: SessionId(session_id.parse().ok()?),
+                    session_id: session_id.parse().ok()?,
                     timestamp: timestamp.parse().ok()?,
                     kind: serde_json::from_str(&data).ok()?,
                 })
@@ -123,7 +123,7 @@ impl EventStore {
             .filter_map(|r| r.ok())
             .filter_map(|(session_id, started_at, ended_at, message_count)| {
                 Some(SessionSummary {
-                    id: SessionId(session_id.parse().ok()?),
+                    id: session_id.parse().ok()?,
                     started_at: started_at.parse().ok()?,
                     ended_at: ended_at.and_then(|s| s.parse().ok()),
                     message_count,
@@ -172,7 +172,7 @@ impl EventStore {
             .filter_map(|(id, session_id, timestamp, data)| {
                 Some(Event {
                     id: id.parse().ok()?,
-                    session_id: SessionId(session_id.parse().ok()?),
+                    session_id: session_id.parse().ok()?,
                     timestamp: timestamp.parse().ok()?,
                     kind: serde_json::from_str(&data).ok()?,
                 })
