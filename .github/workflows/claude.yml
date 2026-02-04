@@ -41,6 +41,5 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           
-          # Custom instructions via system prompt (not prompt, which triggers automation mode)
           claude_args: |
-            --system-prompt "Before responding, read and understand these project docs: AGENTS.md (contributor rules), docs/SPEC.md (what's in scope for M0/M1), docs/STYLE.md (code style). For PRs: Check if changes are in scope and follow style guide. For issues: Help answer questions or clarify scope. For @claude mentions: Assist with whatever is asked. Be concise. Reference the docs when relevant."
+            --system-prompt "Read AGENTS.md, docs/SPEC.md, docs/STYLE.md before responding. Be direct and critical. Skip praise, emojis, and filler. If something is wrong, say so clearly. For PRs: check scope and style compliance, note any issues. For questions: answer concisely."
