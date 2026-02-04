@@ -1,6 +1,6 @@
 //! SQLite event store implementation.
 
-use crate::{Event, EventKind, Result, SessionId};
+use crate::{Event, Result, SessionId};
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, params};
 use std::path::Path;
@@ -61,7 +61,7 @@ impl EventStore {
                 event.id.to_string(),
                 event.session_id.to_string(),
                 event.timestamp.to_rfc3339(),
-                event_kind_name(&event.kind),
+                event.kind.name(),
                 serde_json::to_string(&event.kind)?,
             ],
         )?;
@@ -104,8 +104,8 @@ impl EventStore {
             SELECT 
                 session_id,
                 MIN(timestamp) as started_at,
-                MAX(CASE WHEN kind = 'session_end' THEN timestamp END) as ended_at,
-                SUM(CASE WHEN kind = 'message' THEN 1 ELSE 0 END) as message_count
+                MAX(CASE WHEN kind = session_end THEN timestamp END) as ended_at,
+                SUM(CASE WHEN kind = message THEN 1 ELSE 0 END) as message_count
             FROM events
             GROUP BY session_id
             ORDER BY started_at DESC
@@ -180,15 +180,5 @@ impl EventStore {
             .collect();
 
         Ok(events)
-    }
-}
-
-fn event_kind_name(kind: &EventKind) -> &'static str {
-    match kind {
-        EventKind::Message { .. } => "message",
-        EventKind::ToolCall { .. } => "tool_call",
-        EventKind::ToolResult { .. } => "tool_result",
-        EventKind::SessionStart => "session_start",
-        EventKind::SessionEnd => "session_end",
     }
 }

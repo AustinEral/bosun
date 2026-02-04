@@ -82,6 +82,29 @@ pub enum EventKind {
     SessionEnd,
 }
 
+impl EventKind {
+    /// Returns the canonical name of this event kind.
+    ///
+    /// This matches the serialized `kind` field and is used for storage indexing.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use storage::EventKind;
+    ///
+    /// assert_eq!(EventKind::SessionStart.name(), "session_start");
+    /// ```
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Message { .. } => "message",
+            Self::ToolCall { .. } => "tool_call",
+            Self::ToolResult { .. } => "tool_result",
+            Self::SessionStart => "session_start",
+            Self::SessionEnd => "session_end",
+        }
+    }
+}
+
 /// An event in the session log.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Event {
@@ -109,5 +132,41 @@ impl Event {
                 content: content.into(),
             },
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn event_kind_name_matches_serde() {
+        // Verify that name() returns values consistent with serde serialization
+        assert_eq!(EventKind::SessionStart.name(), "session_start");
+        assert_eq!(EventKind::SessionEnd.name(), "session_end");
+        assert_eq!(
+            EventKind::Message {
+                role: Role::User,
+                content: "test".into()
+            }
+            .name(),
+            "message"
+        );
+        assert_eq!(
+            EventKind::ToolCall {
+                name: "test".into(),
+                input: serde_json::Value::Null
+            }
+            .name(),
+            "tool_call"
+        );
+        assert_eq!(
+            EventKind::ToolResult {
+                name: "test".into(),
+                output: serde_json::Value::Null
+            }
+            .name(),
+            "tool_result"
+        );
     }
 }
