@@ -11,6 +11,30 @@ pub enum CapabilityKind {
     SecretsRead,
 }
 
+impl CapabilityKind {
+    /// Returns the canonical name of this capability kind.
+    ///
+    /// Names match the serde serialization format (snake_case).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use policy::CapabilityKind;
+    ///
+    /// assert_eq!(CapabilityKind::FsRead.name(), "fs_read");
+    /// assert_eq!(CapabilityKind::NetHttp.name(), "net_http");
+    /// ```
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::FsRead => "fs_read",
+            Self::FsWrite => "fs_write",
+            Self::NetHttp => "net_http",
+            Self::Exec => "exec",
+            Self::SecretsRead => "secrets_read",
+        }
+    }
+}
+
 /// A capability request with optional scope.
 #[derive(Debug, Clone)]
 pub struct CapabilityRequest {
@@ -48,5 +72,29 @@ impl CapabilityRequest {
 
     pub fn secrets_read(key: impl Into<String>) -> Self {
         Self::with_scope(CapabilityKind::SecretsRead, key)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn capability_kind_name_matches_serde() {
+        // Verify that name() returns the same string as serde serialization
+        let kinds = [
+            (CapabilityKind::FsRead, "fs_read"),
+            (CapabilityKind::FsWrite, "fs_write"),
+            (CapabilityKind::NetHttp, "net_http"),
+            (CapabilityKind::Exec, "exec"),
+            (CapabilityKind::SecretsRead, "secrets_read"),
+        ];
+
+        for (kind, expected) in kinds {
+            assert_eq!(kind.name(), expected);
+            // Also verify serde produces the same result
+            let serialized = serde_json::to_string(&kind).unwrap();
+            assert_eq!(serialized, format!("\"{}\"", expected));
+        }
     }
 }

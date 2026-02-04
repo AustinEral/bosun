@@ -95,8 +95,9 @@ impl Policy {
     pub fn check(&self, request: &CapabilityRequest) -> Decision {
         // Check explicit denials first
         if self.deny.all.contains(&request.kind) {
+            let kind_name = request.kind.name();
             return Decision::Deny {
-                reason: format!("{:?} is denied by policy", request.kind),
+                reason: format!("{kind_name} is denied by policy"),
             };
         }
 
@@ -118,16 +119,14 @@ impl Policy {
         if allowed {
             Decision::Allow
         } else {
+            let kind_name = request.kind.name();
+            let scope_info = request
+                .scope
+                .as_ref()
+                .map(|s| format!(" (scope: {s})"))
+                .unwrap_or_default();
             Decision::Deny {
-                reason: format!(
-                    "{:?} not in allowlist{}",
-                    request.kind,
-                    request
-                        .scope
-                        .as_ref()
-                        .map(|s| format!(" (scope: {})", s))
-                        .unwrap_or_default()
-                ),
+                reason: format!("{kind_name} not in allowlist{scope_info}"),
             }
         }
     }
@@ -171,7 +170,7 @@ impl Policy {
             if allowed == "*" {
                 return true;
             }
-            if domain == allowed || domain.ends_with(&format!(".{}", allowed)) {
+            if domain == allowed || domain.ends_with(&format!(".{allowed}")) {
                 return true;
             }
         }
@@ -188,7 +187,7 @@ impl Policy {
                 return true;
             }
             // Exact match or prefix match (e.g., "git" allows "git status")
-            if cmd == allowed || cmd.starts_with(&format!("{} ", allowed)) {
+            if cmd == allowed || cmd.starts_with(&format!("{allowed} ")) {
                 return true;
             }
         }
