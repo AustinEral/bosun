@@ -66,6 +66,7 @@ async fn run() -> Result<()> {
 
 async fn cmd_chat() -> Result<()> {
     println!("bosun v{}", env!("CARGO_PKG_VERSION"));
+    println!();
 
     // Load configuration
     let config = load_config()?;
@@ -82,28 +83,22 @@ async fn cmd_chat() -> Result<()> {
     let db_path = data_dir.join("events.db");
     let store = EventStore::open(&db_path)?;
 
-    println!("Session stored at: {}", db_path.display());
-    println!(
-        "Config: {}",
-        if std::path::Path::new(CONFIG_FILE).exists() {
-            CONFIG_FILE
-        } else {
-            "default"
-        }
-    );
-
     // Create session
     let mut session = Session::new(store, backend, config.policy)?.with_system(SYSTEM_PROMPT);
-    println!("Session ID: {}", session.id);
-    println!("Model: {}", config.backend.model);
-    println!("Type 'quit' or Ctrl+D to exit.\n");
+    
+    println!("  Model:   {}", config.backend.model);
+    println!("  Session: {}", session.id);
+    println!();
+    println!("Type 'quit' to exit.");
+    println!("─────────────────────────────────────────");
+    println!();
 
     // Chat loop
     let stdin = io::stdin();
     let mut stdout = io::stdout();
 
     loop {
-        print!("> ");
+        print!("› ");
         stdout.flush()?;
 
         let mut line = String::new();
@@ -122,22 +117,28 @@ async fn cmd_chat() -> Result<()> {
 
         match session.chat(input).await {
             Ok((response, usage)) => {
-                println!("\n{response}");
-                println!("({} in, {} out)\n", usage.input_tokens, usage.output_tokens);
+                println!();
+                println!("{response}");
+                println!();
+                println!("  {} in → {} out", usage.input_tokens, usage.output_tokens);
+                println!();
             }
             Err(e) => {
-                eprintln!("Error: {e}\n");
+                eprintln!("Error: {e}");
+                println!();
             }
         }
     }
 
-    // Print session totals
+    // Session summary
     let total = session.usage();
-    println!("\n--- Session Summary ---");
-    println!("Tokens: {} in, {} out", total.input_tokens, total.output_tokens);
+    println!();
+    println!("─────────────────────────────────────────");
+    println!("  Session complete");
+    println!("  Tokens: {} in → {} out", total.input_tokens, total.output_tokens);
+    println!("─────────────────────────────────────────");
 
     session.end()?;
-    println!("Session ended.");
     Ok(())
 }
 
@@ -154,7 +155,7 @@ fn cmd_sessions(limit: usize) -> Result<()> {
         "{:<36}  {:<20}  {:<8}  STATUS",
         "SESSION ID", "STARTED", "MSGS"
     );
-    println!("{}", "-".repeat(80));
+    println!("{}", "─".repeat(80));
 
     for summary in sessions.into_iter().take(limit) {
         let started = Local
@@ -206,7 +207,8 @@ fn cmd_logs(session_prefix: &str, kind_filter: Option<&str>) -> Result<()> {
         return Ok(());
     }
 
-    println!("Session: {session_id}\n");
+    println!("Session: {session_id}");
+    println!();
 
     for event in events {
         print_event(&event);
@@ -222,16 +224,16 @@ fn print_event(event: &Event) {
 
     match &event.kind {
         EventKind::SessionStart => {
-            println!("[{time}] === Session started ===");
+            println!("[{time}] ─── Session started ───");
         }
         EventKind::SessionEnd => {
-            println!("[{time}] === Session ended ===");
+            println!("[{time}] ─── Session ended ───");
         }
         EventKind::Message { role, content } => {
             let role_str = match role {
                 Role::User => "USER",
-                Role::Assistant => "ASSISTANT",
-                Role::System => "SYSTEM",
+                Role::Assistant => "ASST",
+                Role::System => "SYS",
             };
             // Truncate long messages for display
             let display_content = if content.len() > 200 {
@@ -242,10 +244,10 @@ fn print_event(event: &Event) {
             println!("[{time}] {role_str}: {display_content}");
         }
         EventKind::ToolCall { name, input } => {
-            println!("[{time}] TOOL CALL: {name} {input:?}");
+            println!("[{time}] CALL: {name} {input:?}");
         }
         EventKind::ToolResult { name, output } => {
-            println!("[{time}] TOOL RESULT: {name} {output:?}");
+            println!("[{time}] RESULT: {name} {output:?}");
         }
     }
 }

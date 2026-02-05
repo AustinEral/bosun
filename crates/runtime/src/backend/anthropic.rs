@@ -258,13 +258,4 @@ mod tests {
         assert_eq!(api.to_string(), "api_key");
         assert_eq!(oauth.to_string(), "claude_code_oauth");
     }
-
-    #[test]
-    fn usage_total_tokens() {
-        let usage = Usage {
-            input_tokens: 100,
-            output_tokens: 50,
-        };
-        assert_eq!(usage.total_tokens(), 150);
-    }
 }

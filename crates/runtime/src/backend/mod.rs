@@ -58,13 +58,6 @@ pub struct Usage {
     pub output_tokens: u32,
 }
 
-impl Usage {
-    /// Total tokens used (input + output).
-    pub fn total_tokens(self) -> u32 {
-        self.input_tokens + self.output_tokens
-    }
-}
-
 /// Response from an LLM backend.
 #[derive(Debug, Clone)]
 pub struct ChatResponse {
