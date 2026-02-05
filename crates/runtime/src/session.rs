@@ -1,6 +1,6 @@
 //! Session management.
 
-use crate::backend::{ChatRequest, LlmBackend, Message, Usage};
+use crate::providers::{ChatRequest, LlmBackend, Message, Usage};
 use crate::{Error, Result};
 use policy::{CapabilityRequest, Decision, Policy};
 use storage::{Event, EventKind, EventStore, Role, SessionId};

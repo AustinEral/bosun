@@ -1,18 +1,18 @@
-//! LLM backend abstraction.
+//! LLM provider adapters.
 //!
-//! Provides a trait for LLM backends, allowing Bosun to support multiple
-//! providers (Anthropic API, OpenAI, etc.) through a unified interface.
+//! Each provider implements the backend trait for its specific API.
 
 mod anthropic;
 
 pub use anthropic::{AnthropicAuth, AnthropicBackend};
 
+// Legacy types used by anthropic adapter (to be migrated in future PR)
 use crate::Result;
 use serde::Deserialize;
 use std::future::Future;
 use storage::Role;
 
-/// A message in the conversation.
+/// A message in the conversation (legacy).
 #[derive(Debug, Clone)]
 pub struct Message {
     pub role: Role,
@@ -42,36 +42,28 @@ impl Message {
     }
 }
 
-/// Request to send to an LLM backend.
+/// Request to send to an LLM backend (legacy).
 #[derive(Debug, Clone)]
 pub struct ChatRequest<'a> {
     pub messages: &'a [Message],
     pub system: Option<&'a str>,
 }
 
-/// Token usage information from an LLM response.
+/// Token usage information (legacy).
 #[derive(Debug, Clone, Copy, Default, Deserialize)]
 pub struct Usage {
-    /// Tokens consumed by the input (prompt).
     pub input_tokens: u32,
-    /// Tokens generated in the output (completion).
     pub output_tokens: u32,
 }
 
-/// Response from an LLM backend.
+/// Response from an LLM backend (legacy).
 #[derive(Debug, Clone)]
 pub struct ChatResponse {
-    /// The generated content.
     pub content: String,
-    /// Token usage statistics.
     pub usage: Usage,
 }
 
-/// Trait for LLM backends.
-///
-/// Implementations handle the specifics of communicating with different
-/// LLM providers (API calls, etc.).
+/// Trait for LLM backends (legacy).
 pub trait LlmBackend: Send + Sync {
-    /// Send a chat request and get a response.
     fn chat(&self, request: ChatRequest<'_>) -> impl Future<Output = Result<ChatResponse>> + Send;
 }
