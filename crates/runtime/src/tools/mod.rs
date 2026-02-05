@@ -1,9 +1,11 @@
 //! Tool execution and MCP integration.
 
+mod empty;
 pub mod errors;
-pub mod host;
 mod mcp_client;
+mod r#trait;
 
+pub use empty::EmptyToolHost;
 pub use errors::ToolError;
-pub use host::{EmptyToolHost, ToolHost};
 pub use mcp_client::{CallToolResult, McpClient, McpError, Tool};
+pub use r#trait::ToolHost;

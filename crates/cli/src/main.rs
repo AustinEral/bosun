@@ -75,7 +75,9 @@ async fn cmd_chat() -> Result<()> {
     let auth = config.auth().map_err(|e| Error::Config(e.to_string()))?;
 
     // Initialize LLM backend
-    let backend = AnthropicBackend::builder(auth, &config.backend.model).build();
+    let backend = AnthropicBackend::builder(auth, &config.backend.model)
+        .system(SYSTEM_PROMPT)
+        .build();
 
     // Initialize event store
     let data_dir = data_dir();
@@ -84,7 +86,7 @@ async fn cmd_chat() -> Result<()> {
     let store = EventStore::open(&db_path)?;
 
     // Create session
-    let mut session = Session::new(store, backend, config.policy)?.with_system(SYSTEM_PROMPT);
+    let mut session = Session::new(store, backend, config.policy)?;
 
     println!("  Model:   {}", config.backend.model);
     println!("  Session: {}", session.id);
@@ -115,7 +117,7 @@ async fn cmd_chat() -> Result<()> {
             break;
         }
 
-        match session.chat(input).await {
+        match session.chat::<runtime::EmptyToolHost>(input, None).await {
             Ok((response, usage)) => {
                 println!();
                 println!("{response}");

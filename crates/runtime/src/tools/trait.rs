@@ -1,4 +1,4 @@
-//! Tool execution boundary.
+//! Tool host trait.
 
 use crate::model::{ToolCall, ToolSpec};
 use crate::tools::ToolError;
@@ -15,20 +15,4 @@ pub trait ToolHost: Send + Sync {
 
     /// Execute a tool call.
     fn execute(&self, call: &ToolCall) -> impl Future<Output = Result<Value, ToolError>> + Send;
-}
-
-/// A no-op tool host with no tools.
-///
-/// Useful for testing or when tools are not needed.
-#[derive(Debug, Default)]
-pub struct EmptyToolHost;
-
-impl ToolHost for EmptyToolHost {
-    fn specs(&self) -> &[ToolSpec] {
-        &[]
-    }
-
-    async fn execute(&self, call: &ToolCall) -> Result<Value, ToolError> {
-        Err(ToolError::NotFound(call.name.clone()))
-    }
 }

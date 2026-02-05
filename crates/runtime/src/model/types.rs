@@ -50,30 +50,6 @@ pub struct Message {
 }
 
 impl Message {
-    /// Create a user message with text.
-    pub fn user(text: impl Into<String>) -> Self {
-        Self {
-            role: Role::User,
-            parts: vec![Part::Text(text.into())],
-        }
-    }
-
-    /// Create an assistant message with text.
-    pub fn assistant(text: impl Into<String>) -> Self {
-        Self {
-            role: Role::Assistant,
-            parts: vec![Part::Text(text.into())],
-        }
-    }
-
-    /// Create a system message.
-    pub fn system(text: impl Into<String>) -> Self {
-        Self {
-            role: Role::System,
-            parts: vec![Part::Text(text.into())],
-        }
-    }
-
     /// Get combined text content from all text parts.
     pub fn text(&self) -> String {
         self.parts
