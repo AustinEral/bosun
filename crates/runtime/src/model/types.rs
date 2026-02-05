@@ -1,7 +1,6 @@
 use super::errors::ModelError;
-use crate::tools::ToolError;
+use crate::tools::{ToolCall, ToolResult, ToolSpec};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::future::Future;
 
 /// The role of a message sender.
@@ -10,28 +9,6 @@ pub enum Role {
     System,
     User,
     Assistant,
-}
-
-/// A tool call requested by the model.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolCall {
-    pub id: String,
-    pub name: String,
-    pub input: Value,
-}
-
-/// The result the runtime returned from a tool call.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "status", rename_all = "snake_case")]
-pub enum ToolResult {
-    Success {
-        tool_call_id: String,
-        output: Value,
-    },
-    Failure {
-        tool_call_id: String,
-        error: ToolError,
-    },
 }
 
 /// A part of a message, which can be text or a tool interaction.
@@ -74,14 +51,6 @@ impl Message {
     }
 }
 
-/// A tool definition.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolSpec {
-    pub name: String,
-    pub description: String,
-    pub schema: Value,
-}
-
 /// Token usage statistics.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct Usage {
@@ -114,6 +83,7 @@ pub trait Backend: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::Value;
 
     #[test]
     fn message_text_extraction() {

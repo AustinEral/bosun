@@ -117,7 +117,7 @@ async fn cmd_chat() -> Result<()> {
             break;
         }
 
-        match session.chat::<runtime::EmptyToolHost>(input, None).await {
+        match session.chat(input).await {
             Ok((response, usage)) => {
                 println!();
                 println!("{response}");

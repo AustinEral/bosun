@@ -1,4 +1,4 @@
-//! LLM provider adapters.
+//! LLM provider backends.
 
 mod anthropic;
 

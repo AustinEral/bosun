@@ -1,9 +1,7 @@
 //! Anthropic API backend.
 
-use crate::model::{
-    Backend, Message, ModelError, ModelRequest, ModelResponse, Part, Role, ToolCall, ToolResult,
-    ToolSpec, Usage,
-};
+use crate::model::{Backend, Message, ModelError, ModelRequest, ModelResponse, Part, Role, Usage};
+use crate::tools::{ToolCall, ToolResult, ToolSpec};
 use reqwest::RequestBuilder;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
