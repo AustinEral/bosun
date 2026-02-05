@@ -4,8 +4,30 @@
 
 ## Status
 
-**Phase:** Planning / Pre-development  
-**Date:** 2026-02-03
+**Phase:** M0 Complete / Active Development  
+**Current Work:** M1 (MCP tool integration)
+
+## Quick Start
+
+```bash
+# Clone and build
+git clone https://github.com/AustinEral/bosun.git
+cd bosun
+cargo build --release
+
+# Start chatting
+./target/release/bosun chat
+
+# View session history
+./target/release/bosun sessions
+
+# View event logs
+./target/release/bosun logs --session <id>
+```
+
+**Requirements:**
+- Rust 1.75+ (for async trait support)
+- `ANTHROPIC_API_KEY` environment variable
 
 ## Quick Summary
 
@@ -40,18 +62,18 @@
 
 ## Milestones
 
-### M0: Core Loop
-- CLI chat
-- SQLite event log
-- Capability gate + policy
-- LLM streaming (Anthropic)
-- Safe defaults
+### M0: Core Loop ✓
+- [x] CLI chat
+- [x] SQLite event log
+- [x] Capability gate + policy
+- [x] LLM streaming (Anthropic)
+- [x] Safe defaults
 
-### M1: Community Tools
-- MCP client integration
-- Tool listing + invocation
-- Capability enforcement at tool boundary
-- Cost tracking
+### M1: Community Tools (In Progress)
+- [x] MCP client integration
+- [x] Tool listing + invocation
+- [ ] Capability enforcement at tool boundary
+- [ ] Cost tracking per session
 
 ### M2+: Future
 - Memory system (pinned facts + search)
@@ -59,14 +81,20 @@
 - Context budgets + compression
 - Portability (WASM, mobile)
 
-## Getting Started
-
-*Not yet implemented. This is planning documentation.*
+## Building from Source
 
 ```bash
-# Future usage
-agent init
-agent chat
+# Debug build
+cargo build
+
+# Release build (optimized)
+cargo build --release
+
+# Run tests
+cargo test
+
+# Run lints
+cargo clippy
 ```
 
 ## License
