@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 /// Capability types that can be granted or denied.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -32,6 +33,12 @@ impl CapabilityKind {
             Self::Exec => "exec",
             Self::SecretsRead => "secrets_read",
         }
+    }
+}
+
+impl fmt::Display for CapabilityKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.name())
     }
 }
 
@@ -95,6 +102,20 @@ mod tests {
             // Also verify serde produces the same result
             let serialized = serde_json::to_string(&kind).unwrap();
             assert_eq!(serialized, format!("\"{}\"", expected));
+        }
+    }
+
+    #[test]
+    fn capability_kind_display_uses_name() {
+        // Verify Display produces the same output as name()
+        for kind in [
+            CapabilityKind::FsRead,
+            CapabilityKind::FsWrite,
+            CapabilityKind::NetHttp,
+            CapabilityKind::Exec,
+            CapabilityKind::SecretsRead,
+        ] {
+            assert_eq!(kind.to_string(), kind.name());
         }
     }
 }
