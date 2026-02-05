@@ -5,5 +5,6 @@
 mod types;
 
 pub use types::{
-    FinishReason, Message, Part, Role, ToolCall, ToolChoice, ToolResult, ToolSpec, Usage,
+    FinishReason, Message, Part, Role, ToolCall, ToolChoice, ToolOutcome, ToolResult, ToolSpec,
+    Usage,
 };

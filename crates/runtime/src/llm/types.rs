@@ -26,25 +26,57 @@ pub struct ToolCall {
     pub input: Value,
 }
 
-/// Result of a tool execution.
+/// Outcome of a tool execution.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "lowercase")]
+pub enum ToolOutcome {
+    /// Tool executed successfully.
+    Success { output: Value },
+    /// Tool execution failed.
+    Error { message: String },
+}
+
+impl ToolOutcome {
+    /// Create a successful outcome with text output.
+    pub fn success(output: impl Into<String>) -> Self {
+        Self::Success {
+            output: Value::String(output.into()),
+        }
+    }
+
+    /// Create a successful outcome with JSON output.
+    pub fn success_json(output: Value) -> Self {
+        Self::Success { output }
+    }
+
+    /// Create an error outcome.
+    pub fn error(message: impl Into<String>) -> Self {
+        Self::Error {
+            message: message.into(),
+        }
+    }
+
+    /// Whether this is an error.
+    pub fn is_error(&self) -> bool {
+        matches!(self, Self::Error { .. })
+    }
+}
+
+/// Result of a tool execution, paired with call ID.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolResult {
     /// ID of the tool call this result corresponds to.
     pub tool_call_id: String,
-    /// Output as JSON (text is `Value::String`).
-    pub output: Value,
-    /// Whether the execution failed.
-    #[serde(default)]
-    pub is_error: bool,
+    /// Outcome of the execution.
+    pub outcome: ToolOutcome,
 }
 
 impl ToolResult {
-    /// Create a successful text result.
+    /// Create a successful result.
     pub fn success(tool_call_id: impl Into<String>, output: impl Into<String>) -> Self {
         Self {
             tool_call_id: tool_call_id.into(),
-            output: Value::String(output.into()),
-            is_error: false,
+            outcome: ToolOutcome::success(output),
         }
     }
 
@@ -52,8 +84,7 @@ impl ToolResult {
     pub fn error(tool_call_id: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             tool_call_id: tool_call_id.into(),
-            output: Value::String(message.into()),
-            is_error: true,
+            outcome: ToolOutcome::error(message),
         }
     }
 }
@@ -75,22 +106,6 @@ impl Part {
     pub fn text(s: impl Into<String>) -> Self {
         Self::Text { text: s.into() }
     }
-
-    /// Extract text if this is a text part.
-    pub fn as_text(&self) -> Option<&str> {
-        match self {
-            Self::Text { text } => Some(text),
-            _ => None,
-        }
-    }
-
-    /// Extract tool call if this is a tool call part.
-    pub fn as_tool_call(&self) -> Option<&ToolCall> {
-        match self {
-            Self::ToolCall(tc) => Some(tc),
-            _ => None,
-        }
-    }
 }
 
 /// A message in the conversation.
@@ -101,28 +116,27 @@ pub struct Message {
 }
 
 impl Message {
-    /// Create a user message with text.
-    pub fn user(text: impl Into<String>) -> Self {
+    /// Create a message with a role and text content.
+    pub fn new(role: Role, text: impl Into<String>) -> Self {
         Self {
-            role: Role::User,
+            role,
             parts: vec![Part::text(text)],
         }
+    }
+
+    /// Create a user message with text.
+    pub fn user(text: impl Into<String>) -> Self {
+        Self::new(Role::User, text)
     }
 
     /// Create an assistant message with text.
     pub fn assistant(text: impl Into<String>) -> Self {
-        Self {
-            role: Role::Assistant,
-            parts: vec![Part::text(text)],
-        }
+        Self::new(Role::Assistant, text)
     }
 
     /// Create a system message.
     pub fn system(text: impl Into<String>) -> Self {
-        Self {
-            role: Role::System,
-            parts: vec![Part::text(text)],
-        }
+        Self::new(Role::System, text)
     }
 
     /// Create a user message with tool results.
@@ -133,18 +147,38 @@ impl Message {
         }
     }
 
+    /// Create a message from parts.
+    pub fn from_parts(role: Role, parts: Vec<Part>) -> Self {
+        Self { role, parts }
+    }
+
+    /// Add a part to this message.
+    pub fn with_part(mut self, part: Part) -> Self {
+        self.parts.push(part);
+        self
+    }
+
     /// Get combined text content.
     pub fn text(&self) -> String {
         self.parts
             .iter()
-            .filter_map(|p| p.as_text())
+            .filter_map(|p| match p {
+                Part::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
             .collect::<Vec<_>>()
             .join("")
     }
 
     /// Extract all tool calls.
     pub fn tool_calls(&self) -> Vec<&ToolCall> {
-        self.parts.iter().filter_map(|p| p.as_tool_call()).collect()
+        self.parts
+            .iter()
+            .filter_map(|p| match p {
+                Part::ToolCall(tc) => Some(tc),
+                _ => None,
+            })
+            .collect()
     }
 }
 
@@ -165,10 +199,8 @@ pub enum ToolChoice {
     /// Model decides whether to use tools.
     #[default]
     Auto,
-    /// Model cannot use tools.
+    /// Model cannot use tools (even if provided).
     None,
-    /// Model must use at least one tool.
-    Required,
 }
 
 /// Why the model stopped generating.
@@ -187,13 +219,6 @@ pub enum FinishReason {
     Unknown(String),
 }
 
-impl FinishReason {
-    /// Whether this indicates tool calls are pending.
-    pub fn is_tool_calls(&self) -> bool {
-        matches!(self, Self::ToolCalls)
-    }
-}
-
 /// Token usage statistics.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct Usage {
@@ -206,25 +231,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn message_text_extraction() {
-        let msg = Message::user("hello world");
+    fn message_builder() {
+        let msg = Message::user("hello").with_part(Part::text(" world"));
         assert_eq!(msg.text(), "hello world");
+    }
+
+    #[test]
+    fn tool_outcome_variants() {
+        let success = ToolOutcome::success("done");
+        assert!(!success.is_error());
+
+        let error = ToolOutcome::error("failed");
+        assert!(error.is_error());
     }
 
     #[test]
     fn tool_result_constructors() {
         let success = ToolResult::success("id1", "output");
-        assert!(!success.is_error);
-        assert_eq!(success.output, Value::String("output".into()));
+        assert!(!success.outcome.is_error());
 
         let error = ToolResult::error("id2", "failed");
-        assert!(error.is_error);
-    }
-
-    #[test]
-    fn part_extraction() {
-        let text = Part::text("hello");
-        assert_eq!(text.as_text(), Some("hello"));
-        assert!(text.as_tool_call().is_none());
+        assert!(error.outcome.is_error());
     }
 }

@@ -41,7 +41,7 @@ mod session;
 
 // LLM core types (provider-agnostic)
 // Full module available as `llm::` for types that overlap with current backend
-pub use llm::{FinishReason, Part, ToolCall, ToolChoice, ToolResult, ToolSpec};
+pub use llm::{FinishReason, Part, ToolCall, ToolChoice, ToolOutcome, ToolResult, ToolSpec};
 
 // LLM backend types (current, to be migrated)
 pub use backend::{
