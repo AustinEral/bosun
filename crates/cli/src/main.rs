@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use chrono::{Local, TimeZone};
 use clap::{Parser, Subcommand};
-use runtime::{AnthropicBackend, Session, Usage};
+use runtime::{AnthropicBackend, Session};
 use storage::{Event, EventKind, EventStore, Role};
 
 use config::Config;
@@ -123,8 +123,7 @@ async fn cmd_chat() -> Result<()> {
         match session.chat(input).await {
             Ok((response, usage)) => {
                 println!("\n{response}");
-                print_usage(&usage);
-                println!();
+                println!("({} in, {} out)\n", usage.input_tokens, usage.output_tokens);
             }
             Err(e) => {
                 eprintln!("Error: {e}\n");
@@ -135,25 +134,11 @@ async fn cmd_chat() -> Result<()> {
     // Print session totals
     let total = session.usage();
     println!("\n--- Session Summary ---");
-    println!(
-        "Total tokens: {} (in: {}, out: {})",
-        total.total_tokens(),
-        total.input_tokens,
-        total.output_tokens
-    );
+    println!("Tokens: {} in, {} out", total.input_tokens, total.output_tokens);
 
     session.end()?;
     println!("Session ended.");
     Ok(())
-}
-
-fn print_usage(usage: &Usage) {
-    println!(
-        "[tokens: {} in + {} out = {}]",
-        usage.input_tokens,
-        usage.output_tokens,
-        usage.total_tokens(),
-    );
 }
 
 fn cmd_sessions(limit: usize) -> Result<()> {
@@ -287,13 +272,6 @@ fn open_store() -> Result<EventStore> {
 }
 
 /// Returns the platform-appropriate data directory for Bosun.
-///
-/// Uses the standard locations for each platform:
-/// - Linux: \$XDG_DATA_HOME/bosun or ~/.local/share/bosun
-/// - macOS: ~/Library/Application Support/bosun
-/// - Windows: {FOLDERID_RoamingAppData}/bosun (typically C:\Users\<User>\AppData\Roaming\bosun)
-///
-/// Falls back to ".bosun" in the current directory if no platform directory is available.
 fn data_dir() -> PathBuf {
     dirs::data_dir()
         .map(|p| p.join(APP_NAME))

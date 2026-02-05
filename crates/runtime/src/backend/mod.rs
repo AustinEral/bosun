@@ -8,6 +8,7 @@ mod anthropic;
 pub use anthropic::{AnthropicAuth, AnthropicBackend};
 
 use crate::Result;
+use serde::Deserialize;
 use std::future::Future;
 use storage::Role;
 
@@ -49,7 +50,7 @@ pub struct ChatRequest<'a> {
 }
 
 /// Token usage information from an LLM response.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, Deserialize)]
 pub struct Usage {
     /// Tokens consumed by the input (prompt).
     pub input_tokens: u32,

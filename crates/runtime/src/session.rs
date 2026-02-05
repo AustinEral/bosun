@@ -14,7 +14,7 @@ pub struct Session<B: LlmBackend> {
     messages: Vec<Message>,
     system: Option<String>,
     /// Cumulative token usage for this session.
-    total_usage: Usage,
+    usage: Usage,
 }
 
 impl<B: LlmBackend> Session<B> {
@@ -31,7 +31,7 @@ impl<B: LlmBackend> Session<B> {
             policy,
             messages: Vec::new(),
             system: None,
-            total_usage: Usage::default(),
+            usage: Usage::default(),
         })
     }
 
@@ -43,7 +43,7 @@ impl<B: LlmBackend> Session<B> {
 
     /// Get cumulative token usage for this session.
     pub fn usage(&self) -> Usage {
-        self.total_usage
+        self.usage
     }
 
     /// Check if a capability is allowed by policy.
@@ -80,8 +80,8 @@ impl<B: LlmBackend> Session<B> {
             .append(&Event::message(self.id, Role::Assistant, &response.content))?;
 
         // Track cumulative usage
-        self.total_usage.input_tokens += response.usage.input_tokens;
-        self.total_usage.output_tokens += response.usage.output_tokens;
+        self.usage.input_tokens += response.usage.input_tokens;
+        self.usage.output_tokens += response.usage.output_tokens;
 
         Ok((response.content, response.usage))
     }

@@ -117,18 +117,12 @@ struct ApiMessage {
 #[derive(Debug, Deserialize)]
 struct ApiResponse {
     content: Vec<ContentBlock>,
-    usage: ApiUsage,
+    usage: Usage,
 }
 
 #[derive(Debug, Deserialize)]
 struct ContentBlock {
     text: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct ApiUsage {
-    input_tokens: u32,
-    output_tokens: u32,
 }
 
 /// Builder for creating an Anthropic backend.
@@ -246,12 +240,10 @@ impl LlmBackend for AnthropicBackend {
             .collect::<Vec<_>>()
             .join("");
 
-        let usage = Usage {
-            input_tokens: api_response.usage.input_tokens,
-            output_tokens: api_response.usage.output_tokens,
-        };
-
-        Ok(ChatResponse { content, usage })
+        Ok(ChatResponse {
+            content,
+            usage: api_response.usage,
+        })
     }
 }
 
@@ -275,5 +267,4 @@ mod tests {
         };
         assert_eq!(usage.total_tokens(), 150);
     }
-
 }
