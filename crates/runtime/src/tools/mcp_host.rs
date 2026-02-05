@@ -1,7 +1,7 @@
 //! MCP-backed tool host.
 
-use super::{McpClient, McpError, Tool, ToolCall, ToolError, ToolHost, ToolSpec};
-use serde_json::{Map, Value};
+use super::{McpClient, McpError, ToolArguments, ToolCall, ToolError, ToolHost, ToolSpec};
+use serde_json::Value;
 
 /// Tool host backed by an MCP server.
 pub struct McpToolHost {
@@ -20,7 +20,7 @@ impl McpToolHost {
             .list_tools()
             .await?
             .into_iter()
-            .filter_map(tool_to_spec)
+            .map(ToolSpec::from)
             .collect();
         Ok(Self { client, specs })
     }
@@ -32,35 +32,14 @@ impl ToolHost for McpToolHost {
     }
 
     async fn execute(&self, call: &ToolCall) -> Result<Value, ToolError> {
-        let arguments = to_arguments(&call.input)?;
+        let arguments = ToolArguments::try_from(call.input.clone())?;
         let result = self
             .client
-            .call_tool(&call.name, arguments)
+            .call_tool(&call.name, arguments.0)
             .await
             .map_err(|e| ToolError::Execution(e.to_string()))?;
 
-        // Convert CallToolResult content to JSON value
         serde_json::to_value(&result.content)
             .map_err(|e| ToolError::Execution(format!("serialize result: {e}")))
     }
-}
-
-/// Convert JSON value to optional argument map.
-fn to_arguments(input: &Value) -> Result<Option<Map<String, Value>>, ToolError> {
-    match input {
-        Value::Null => Ok(None),
-        Value::Object(map) => Ok(Some(map.clone())),
-        _ => Err(ToolError::InvalidInput(
-            "tool input must be a JSON object".into(),
-        )),
-    }
-}
-
-/// Convert rmcp Tool to our ToolSpec.
-fn tool_to_spec(tool: Tool) -> Option<ToolSpec> {
-    let name = tool.name.to_string();
-    let description = tool.description.unwrap_or_default().to_string();
-    // input_schema is Arc<Map<String, Value>> - clone inner and wrap as Object
-    let schema = Value::Object((*tool.input_schema).clone());
-    Some(ToolSpec { name, description, schema })
 }

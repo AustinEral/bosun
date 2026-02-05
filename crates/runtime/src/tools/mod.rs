@@ -12,4 +12,4 @@ pub use errors::ToolError;
 pub use mcp_client::{CallToolResult, McpClient, McpError, Tool};
 pub use mcp_host::McpToolHost;
 pub use r#trait::ToolHost;
-pub use types::{ToolCall, ToolResult, ToolSpec};
+pub use types::{ToolArguments, ToolCall, ToolResult, ToolSpec};

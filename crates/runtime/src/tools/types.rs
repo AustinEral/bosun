@@ -33,3 +33,32 @@ pub struct ToolSpec {
     pub description: String,
     pub schema: Value,
 }
+
+// Conversion from rmcp Tool
+impl From<super::Tool> for ToolSpec {
+    fn from(tool: super::Tool) -> Self {
+        Self {
+            name: tool.name.to_string(),
+            description: tool.description.unwrap_or_default().to_string(),
+            schema: serde_json::Value::Object((*tool.input_schema).clone()),
+        }
+    }
+}
+
+/// Wrapper for tool call arguments (MCP expects Option<Map>).
+#[derive(Debug, Clone)]
+pub struct ToolArguments(pub Option<serde_json::Map<String, serde_json::Value>>);
+
+impl TryFrom<serde_json::Value> for ToolArguments {
+    type Error = super::ToolError;
+
+    fn try_from(value: serde_json::Value) -> Result<Self, Self::Error> {
+        match value {
+            serde_json::Value::Null => Ok(Self(None)),
+            serde_json::Value::Object(map) => Ok(Self(Some(map))),
+            _ => Err(super::ToolError::InvalidInput(
+                "tool input must be a JSON object".into(),
+            )),
+        }
+    }
+}
