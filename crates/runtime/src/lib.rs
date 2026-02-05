@@ -20,6 +20,6 @@ pub use model::{
 
 // Tool types
 pub use tools::{
-    CallToolResult, EmptyToolHost, McpClient, McpError, Tool, ToolCall, ToolError, ToolHost,
-    ToolResult, ToolSpec,
+    CallToolResult, EmptyToolHost, McpClient, McpError, McpToolHost, Tool, ToolArguments,
+    ToolCall, ToolError, ToolHost, ToolResult, ToolSpec,
 };

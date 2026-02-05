@@ -20,6 +20,9 @@ pub enum Error {
     #[error("config error: {0}")]
     Config(String),
 
+    #[error("tool error: {0}")]
+    Tool(String),
+
     #[error(transparent)]
     Runtime(#[from] runtime::Error),
 

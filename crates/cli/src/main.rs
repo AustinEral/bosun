@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use chrono::{Local, TimeZone};
 use clap::{Parser, Subcommand};
-use runtime::{AnthropicBackend, Session};
+use runtime::{AnthropicBackend, EmptyToolHost, McpToolHost, Session, ToolHost};
 use storage::{Event, EventKind, EventStore, Role};
 
 use config::Config;
@@ -90,12 +90,37 @@ async fn cmd_chat() -> Result<()> {
 
     println!("  Model:   {}", config.backend.model);
     println!("  Session: {}", session.id);
-    println!();
-    println!("Type 'quit' to exit.");
-    println!("─────────────────────────────────────────");
-    println!();
 
-    // Chat loop
+    // Initialize tool host
+    if let Some(tool_config) = config.tools.first() {
+        let tool_host = McpToolHost::spawn(&tool_config.command, &tool_config.args)
+            .await
+            .map_err(|e| Error::Tool(e.to_string()))?;
+
+        let tool_count = tool_host.specs().len();
+        println!("  Tools:   {} from {}", tool_count, tool_config.command);
+        println!();
+        println!("Type 'quit' to exit.");
+        println!("─────────────────────────────────────────");
+        println!();
+
+        chat_loop(&mut session, &tool_host).await
+    } else {
+        println!("  Tools:   none");
+        println!();
+        println!("Type 'quit' to exit.");
+        println!("─────────────────────────────────────────");
+        println!();
+
+        chat_loop(&mut session, &EmptyToolHost).await
+    }
+}
+
+async fn chat_loop<B, H>(session: &mut Session<B>, tool_host: &H) -> Result<()>
+where
+    B: runtime::Backend,
+    H: ToolHost,
+{
     let stdin = io::stdin();
     let mut stdout = io::stdout();
 
@@ -105,7 +130,6 @@ async fn cmd_chat() -> Result<()> {
 
         let mut line = String::new();
         if stdin.lock().read_line(&mut line)? == 0 {
-            // EOF
             break;
         }
 
@@ -117,7 +141,7 @@ async fn cmd_chat() -> Result<()> {
             break;
         }
 
-        match session.chat(input).await {
+        match session.chat_with_tools(input, tool_host).await {
             Ok((response, usage)) => {
                 println!();
                 println!("{response}");
@@ -143,7 +167,6 @@ async fn cmd_chat() -> Result<()> {
     );
     println!("─────────────────────────────────────────");
 
-    session.end()?;
     Ok(())
 }
 
