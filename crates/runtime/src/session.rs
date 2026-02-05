@@ -61,29 +61,32 @@ impl<B: LlmBackend> Session<B> {
 
     /// Send a user message and get the assistant's response.
     ///
-    /// Returns a tuple of (response_content, usage_for_this_turn).
+    /// Returns a tuple of (response_text, usage_for_this_turn).
+    ///
+    /// Note: This is a simple text-only flow. For tool usage, see `chat_turn`
+    /// (to be added in a future PR).
     pub async fn chat(&mut self, user_input: &str) -> Result<(String, Usage)> {
         let user_msg = Message::user(user_input);
         self.messages.push(user_msg);
         self.store
             .append(&Event::message(self.id, Role::User, user_input))?;
 
-        let request = ChatRequest {
-            messages: &self.messages,
-            system: self.system.as_deref(),
-        };
+        let request = ChatRequest::simple(&self.messages, self.system.as_deref());
         let response = self.backend.chat(request).await?;
 
-        let assistant_msg = Message::assistant(&response.content);
+        // Extract text content (ignores any tool blocks)
+        let text = response.text();
+
+        let assistant_msg = Message::assistant(&text);
         self.messages.push(assistant_msg);
         self.store
-            .append(&Event::message(self.id, Role::Assistant, &response.content))?;
+            .append(&Event::message(self.id, Role::Assistant, &text))?;
 
         // Track cumulative usage
         self.usage.input_tokens += response.usage.input_tokens;
         self.usage.output_tokens += response.usage.output_tokens;
 
-        Ok((response.content, response.usage))
+        Ok((text, response.usage))
     }
 
     /// End the session.

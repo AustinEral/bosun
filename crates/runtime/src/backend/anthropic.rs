@@ -1,6 +1,6 @@
 //! Anthropic API backend.
 
-use super::{ChatRequest, ChatResponse, LlmBackend, Usage};
+use super::{ChatRequest, ChatResponse, ContentBlock, LlmBackend, StopReason, ToolDef, Usage};
 use crate::{Error, Result};
 use reqwest::RequestBuilder;
 use serde::{Deserialize, Serialize};
@@ -78,6 +78,10 @@ impl AnthropicAuth {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// API Request Types
+// ─────────────────────────────────────────────────────────────────────────────
+
 #[derive(Debug, Serialize)]
 struct ApiRequest {
     model: String,
@@ -85,6 +89,8 @@ struct ApiRequest {
     messages: Vec<ApiMessage>,
     #[serde(skip_serializing_if = "Option::is_none")]
     system: Option<SystemPrompt>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    tools: Vec<ApiTool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -111,19 +117,93 @@ struct CacheControl {
 #[derive(Debug, Serialize)]
 struct ApiMessage {
     role: &'static str,
-    content: String,
+    content: ApiContent,
 }
+
+/// Message content can be a simple string or blocks.
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum ApiContent {
+    Text(String),
+    Blocks(Vec<ApiContentBlock>),
+}
+
+/// Content block for API requests.
+#[derive(Debug, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum ApiContentBlock {
+    Text {
+        text: String,
+    },
+    ToolUse {
+        id: String,
+        name: String,
+        input: serde_json::Value,
+    },
+    ToolResult {
+        tool_use_id: String,
+        content: String,
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        is_error: bool,
+    },
+}
+
+#[derive(Debug, Serialize)]
+struct ApiTool {
+    name: String,
+    description: String,
+    input_schema: serde_json::Value,
+}
+
+impl From<&ToolDef> for ApiTool {
+    fn from(tool: &ToolDef) -> Self {
+        Self {
+            name: tool.name.clone(),
+            description: tool.description.clone(),
+            input_schema: tool.input_schema.clone(),
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// API Response Types
+// ─────────────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
 struct ApiResponse {
-    content: Vec<ContentBlock>,
+    content: Vec<ApiResponseBlock>,
     usage: Usage,
+    stop_reason: Option<String>,
 }
 
+/// Content block from API response.
 #[derive(Debug, Deserialize)]
-struct ContentBlock {
-    text: String,
+#[serde(tag = "type", rename_all = "snake_case")]
+enum ApiResponseBlock {
+    Text {
+        text: String,
+    },
+    ToolUse {
+        id: String,
+        name: String,
+        input: serde_json::Value,
+    },
 }
+
+impl From<ApiResponseBlock> for ContentBlock {
+    fn from(block: ApiResponseBlock) -> Self {
+        match block {
+            ApiResponseBlock::Text { text } => ContentBlock::Text { text },
+            ApiResponseBlock::ToolUse { id, name, input } => {
+                ContentBlock::ToolUse { id, name, input }
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Backend Implementation
+// ─────────────────────────────────────────────────────────────────────────────
 
 /// Builder for creating an Anthropic backend.
 #[derive(Debug, Clone)]
@@ -180,6 +260,49 @@ impl AnthropicBackend {
             Role::Assistant => "assistant",
         }
     }
+
+    /// Convert our Message to API format.
+    fn message_to_api(msg: &super::Message) -> ApiMessage {
+        let role = Self::role_to_api_str(msg.role);
+
+        // Simple case: single text block -> string content
+        if msg.content.len() == 1 {
+            if let Some(text) = msg.content[0].as_text() {
+                return ApiMessage {
+                    role,
+                    content: ApiContent::Text(text.to_string()),
+                };
+            }
+        }
+
+        // Complex case: multiple blocks or non-text content
+        let blocks: Vec<ApiContentBlock> = msg
+            .content
+            .iter()
+            .map(|block| match block {
+                ContentBlock::Text { text } => ApiContentBlock::Text { text: text.clone() },
+                ContentBlock::ToolUse { id, name, input } => ApiContentBlock::ToolUse {
+                    id: id.clone(),
+                    name: name.clone(),
+                    input: input.clone(),
+                },
+                ContentBlock::ToolResult {
+                    tool_use_id,
+                    content,
+                    is_error,
+                } => ApiContentBlock::ToolResult {
+                    tool_use_id: tool_use_id.clone(),
+                    content: content.clone(),
+                    is_error: *is_error,
+                },
+            })
+            .collect();
+
+        ApiMessage {
+            role,
+            content: ApiContent::Blocks(blocks),
+        }
+    }
 }
 
 impl std::fmt::Display for AnthropicBackend {
@@ -194,17 +317,17 @@ impl LlmBackend for AnthropicBackend {
             .messages
             .iter()
             .filter(|m| m.role != Role::System)
-            .map(|m| ApiMessage {
-                role: Self::role_to_api_str(m.role),
-                content: m.content.clone(),
-            })
+            .map(Self::message_to_api)
             .collect();
+
+        let tools: Vec<ApiTool> = request.tools.iter().map(ApiTool::from).collect();
 
         let api_request = ApiRequest {
             model: self.model.clone(),
             max_tokens: self.max_tokens,
             messages: api_messages,
             system: self.auth.build_system(request.system),
+            tools,
         };
 
         let req = self
@@ -233,16 +356,22 @@ impl LlmBackend for AnthropicBackend {
             .await
             .map_err(|e| Error::Api(e.to_string()))?;
 
-        let content = api_response
+        let stop_reason = api_response
+            .stop_reason
+            .as_deref()
+            .map(StopReason::from_anthropic)
+            .unwrap_or_default();
+
+        let content: Vec<ContentBlock> = api_response
             .content
             .into_iter()
-            .map(|b| b.text)
-            .collect::<Vec<_>>()
-            .join("");
+            .map(ContentBlock::from)
+            .collect();
 
         Ok(ChatResponse {
             content,
             usage: api_response.usage,
+            stop_reason,
         })
     }
 }
@@ -257,5 +386,33 @@ mod tests {
         let oauth = AnthropicAuth::ClaudeCodeOauth("test".into());
         assert_eq!(api.to_string(), "api_key");
         assert_eq!(oauth.to_string(), "claude_code_oauth");
+    }
+
+    #[test]
+    fn stop_reason_parsing() {
+        assert_eq!(StopReason::from_anthropic("end_turn"), StopReason::EndTurn);
+        assert_eq!(StopReason::from_anthropic("tool_use"), StopReason::ToolUse);
+        assert_eq!(
+            StopReason::from_anthropic("max_tokens"),
+            StopReason::MaxTokens
+        );
+        assert_eq!(
+            StopReason::from_anthropic("stop_sequence"),
+            StopReason::StopSequence
+        );
+        assert_eq!(StopReason::from_anthropic("unknown"), StopReason::EndTurn);
+    }
+
+    #[test]
+    fn content_block_helpers() {
+        let text = ContentBlock::text("hello");
+        assert_eq!(text.as_text(), Some("hello"));
+        assert!(text.as_tool_use().is_none());
+
+        let tool = ContentBlock::tool_use("id1", "my_tool", serde_json::json!({"arg": 1}));
+        assert!(tool.as_text().is_none());
+        let call = tool.as_tool_use().unwrap();
+        assert_eq!(call.name, "my_tool");
+        assert_eq!(call.id, "id1");
     }
 }

@@ -13,6 +13,13 @@
 //! - **LlmBackend**: A trait abstracting LLM providers (Anthropic, etc.).
 //! - **McpClient**: A client for connecting to MCP tool servers.
 //!
+//! # Block-based Messages
+//!
+//! Messages use content blocks to support both text and tool interactions:
+//! - `ContentBlock::Text` — plain text content
+//! - `ContentBlock::ToolUse` — model requesting a tool call
+//! - `ContentBlock::ToolResult` — result of a tool execution
+//!
 //! # Example
 //!
 //! ```ignore
@@ -27,7 +34,7 @@
 //! let policy = Policy::restrictive();
 //!
 //! let mut session = Session::new(store, backend, policy)?;
-//! let response = session.chat("Hello!").await?;
+//! let (response, usage) = session.chat("Hello!").await?;
 //! println!("{response}");
 //! # Ok(())
 //! # }
@@ -40,7 +47,8 @@ mod session;
 
 // LLM backend types
 pub use backend::{
-    AnthropicAuth, AnthropicBackend, ChatRequest, ChatResponse, LlmBackend, Message, Usage,
+    AnthropicAuth, AnthropicBackend, ChatRequest, ChatResponse, ContentBlock, LlmBackend, Message,
+    StopReason, ToolCall, ToolDef, ToolResult, Usage,
 };
 
 // Error types
