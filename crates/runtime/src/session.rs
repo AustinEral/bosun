@@ -1,6 +1,6 @@
 //! Session management.
 
-use crate::backend::{ChatRequest, LlmBackend, Message};
+use crate::backend::{ChatRequest, LlmBackend, Message, Usage};
 use crate::{Error, Result};
 use policy::{CapabilityRequest, Decision, Policy};
 use storage::{Event, EventKind, EventStore, Role, SessionId};
@@ -13,6 +13,8 @@ pub struct Session<B: LlmBackend> {
     policy: Policy,
     messages: Vec<Message>,
     system: Option<String>,
+    /// Cumulative token usage for this session.
+    usage: Usage,
 }
 
 impl<B: LlmBackend> Session<B> {
@@ -29,6 +31,7 @@ impl<B: LlmBackend> Session<B> {
             policy,
             messages: Vec::new(),
             system: None,
+            usage: Usage::default(),
         })
     }
 
@@ -36,6 +39,11 @@ impl<B: LlmBackend> Session<B> {
     pub fn with_system(mut self, system: impl Into<String>) -> Self {
         self.system = Some(system.into());
         self
+    }
+
+    /// Get cumulative token usage for this session.
+    pub fn usage(&self) -> Usage {
+        self.usage
     }
 
     /// Check if a capability is allowed by policy.
@@ -52,7 +60,9 @@ impl<B: LlmBackend> Session<B> {
     }
 
     /// Send a user message and get the assistant's response.
-    pub async fn chat(&mut self, user_input: &str) -> Result<String> {
+    ///
+    /// Returns a tuple of (response_content, usage_for_this_turn).
+    pub async fn chat(&mut self, user_input: &str) -> Result<(String, Usage)> {
         let user_msg = Message::user(user_input);
         self.messages.push(user_msg);
         self.store
@@ -69,7 +79,11 @@ impl<B: LlmBackend> Session<B> {
         self.store
             .append(&Event::message(self.id, Role::Assistant, &response.content))?;
 
-        Ok(response.content)
+        // Track cumulative usage
+        self.usage.input_tokens += response.usage.input_tokens;
+        self.usage.output_tokens += response.usage.output_tokens;
+
+        Ok((response.content, response.usage))
     }
 
     /// End the session.

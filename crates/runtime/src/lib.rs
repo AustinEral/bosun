@@ -28,7 +28,7 @@
 //!
 //! let mut session = Session::new(store, backend, policy)?;
 //! let response = session.chat("Hello!").await?;
-//! println!("{}", response);
+//! println!("{response}");
 //! # Ok(())
 //! # }
 //! ```
@@ -40,7 +40,7 @@ mod session;
 
 // LLM backend types
 pub use backend::{
-    AnthropicAuth, AnthropicBackend, ChatRequest, ChatResponse, LlmBackend, Message,
+    AnthropicAuth, AnthropicBackend, ChatRequest, ChatResponse, LlmBackend, Message, Usage,
 };
 
 // Error types

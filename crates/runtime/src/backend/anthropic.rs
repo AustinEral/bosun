@@ -1,6 +1,6 @@
 //! Anthropic API backend.
 
-use super::{ChatRequest, ChatResponse, LlmBackend};
+use super::{ChatRequest, ChatResponse, LlmBackend, Usage};
 use crate::{Error, Result};
 use reqwest::RequestBuilder;
 use serde::{Deserialize, Serialize};
@@ -117,6 +117,7 @@ struct ApiMessage {
 #[derive(Debug, Deserialize)]
 struct ApiResponse {
     content: Vec<ContentBlock>,
+    usage: Usage,
 }
 
 #[derive(Debug, Deserialize)]
@@ -239,7 +240,10 @@ impl LlmBackend for AnthropicBackend {
             .collect::<Vec<_>>()
             .join("");
 
-        Ok(ChatResponse { content })
+        Ok(ChatResponse {
+            content,
+            usage: api_response.usage,
+        })
     }
 }
 
