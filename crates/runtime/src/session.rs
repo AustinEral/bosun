@@ -1,23 +1,26 @@
 //! Session management.
 
-use crate::providers::{ChatRequest, LlmBackend, Message, Usage};
+use crate::model::{Backend, Message, ModelRequest, Part, Role, ToolResult, Usage};
+use crate::tools::ToolHost;
 use crate::{Error, Result};
 use policy::{CapabilityRequest, Decision, Policy};
-use storage::{Event, EventKind, EventStore, Role, SessionId};
+use serde_json::json;
+use storage::{Event, EventKind, EventStore, Role as StorageRole, SessionId};
+
+const MAX_TOOL_STEPS: usize = 8;
 
 /// A conversation session.
-pub struct Session<B: LlmBackend> {
+pub struct Session<B: Backend> {
     pub id: SessionId,
     store: EventStore,
     backend: B,
     policy: Policy,
     messages: Vec<Message>,
     system: Option<String>,
-    /// Cumulative token usage for this session.
     usage: Usage,
 }
 
-impl<B: LlmBackend> Session<B> {
+impl<B: Backend> Session<B> {
     /// Create a new session with the given store, backend, and policy.
     pub fn new(store: EventStore, backend: B, policy: Policy) -> Result<Self> {
         let id = SessionId::new();
@@ -59,31 +62,132 @@ impl<B: LlmBackend> Session<B> {
         }
     }
 
-    /// Send a user message and get the assistant's response.
-    ///
-    /// Returns a tuple of (response_content, usage_for_this_turn).
+    /// Send a user message and get the assistant's response (no tools).
     pub async fn chat(&mut self, user_input: &str) -> Result<(String, Usage)> {
-        let user_msg = Message::user(user_input);
-        self.messages.push(user_msg);
+        self.messages.push(Message::user(user_input));
         self.store
-            .append(&Event::message(self.id, Role::User, user_input))?;
+            .append(&Event::message(self.id, StorageRole::User, user_input))?;
 
-        let request = ChatRequest {
+        let request = ModelRequest {
             messages: &self.messages,
-            system: self.system.as_deref(),
+            tools: &[],
         };
-        let response = self.backend.chat(request).await?;
+        let response = self
+            .backend
+            .call(request)
+            .await
+            .map_err(|e| Error::Api(e.to_string()))?;
 
-        let assistant_msg = Message::assistant(&response.content);
-        self.messages.push(assistant_msg);
+        let text = response.message.text();
+        self.messages.push(response.message);
         self.store
-            .append(&Event::message(self.id, Role::Assistant, &response.content))?;
+            .append(&Event::message(self.id, StorageRole::Assistant, &text))?;
 
-        // Track cumulative usage
         self.usage.input_tokens += response.usage.input_tokens;
         self.usage.output_tokens += response.usage.output_tokens;
 
-        Ok((response.content, response.usage))
+        Ok((text, response.usage))
+    }
+
+    /// Send a user message with tool support.
+    pub async fn chat_with_tools<H: ToolHost>(
+        &mut self,
+        user_input: &str,
+        tool_host: &H,
+    ) -> Result<(String, Usage)> {
+        self.messages.push(Message::user(user_input));
+        self.store
+            .append(&Event::message(self.id, StorageRole::User, user_input))?;
+
+        let mut turn_usage = Usage::default();
+
+        for _ in 0..MAX_TOOL_STEPS {
+            let request = ModelRequest {
+                messages: &self.messages,
+                tools: tool_host.specs(),
+            };
+
+            let response = self
+                .backend
+                .call(request)
+                .await
+                .map_err(|e| Error::Api(e.to_string()))?;
+            turn_usage.input_tokens += response.usage.input_tokens;
+            turn_usage.output_tokens += response.usage.output_tokens;
+
+            let assistant_text = response.message.text();
+            let tool_calls = response.message.tool_calls();
+
+            self.messages.push(response.message);
+
+            if !assistant_text.is_empty() {
+                self.store.append(&Event::message(
+                    self.id,
+                    StorageRole::Assistant,
+                    &assistant_text,
+                ))?;
+            }
+
+            // No tool calls = done
+            if tool_calls.is_empty() {
+                self.usage.input_tokens += turn_usage.input_tokens;
+                self.usage.output_tokens += turn_usage.output_tokens;
+                return Ok((assistant_text, turn_usage));
+            }
+
+            // Execute tools and collect results
+            let mut tool_result_parts = Vec::with_capacity(tool_calls.len());
+
+            for call in tool_calls {
+                // Log tool call
+                self.store.append(&Event::new(
+                    self.id,
+                    EventKind::ToolCall {
+                        name: call.name.clone(),
+                        input: call.input.clone(),
+                    },
+                ))?;
+
+                let result_part = match tool_host.execute(&call).await {
+                    Ok(output) => {
+                        self.store.append(&Event::new(
+                            self.id,
+                            EventKind::ToolResult {
+                                name: call.name.clone(),
+                                output: output.clone(),
+                            },
+                        ))?;
+                        Part::ToolResult(ToolResult::Success {
+                            tool_call_id: call.id,
+                            output,
+                        })
+                    }
+                    Err(error) => {
+                        self.store.append(&Event::new(
+                            self.id,
+                            EventKind::ToolResult {
+                                name: call.name.clone(),
+                                output: json!({ "error": error.to_string() }),
+                            },
+                        ))?;
+                        Part::ToolResult(ToolResult::Failure {
+                            tool_call_id: call.id,
+                            error,
+                        })
+                    }
+                };
+
+                tool_result_parts.push(result_part);
+            }
+
+            // Add tool results as user message
+            self.messages.push(Message {
+                role: Role::User,
+                parts: tool_result_parts,
+            });
+        }
+
+        Err(Error::InvalidState("max tool steps exceeded".into()))
     }
 
     /// End the session.
