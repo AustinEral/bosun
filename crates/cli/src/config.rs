@@ -12,6 +12,10 @@ pub struct Config {
     #[serde(default)]
     pub backend: BackendConfig,
 
+    /// MCP tool servers.
+    #[serde(default)]
+    pub tools: Vec<ToolConfig>,
+
     /// Policy rules (allow/deny).
     #[serde(flatten)]
     pub policy: Policy,
@@ -38,6 +42,17 @@ pub struct BackendConfig {
     pub oauth_token: Option<String>,
 }
 
+/// MCP tool server configuration.
+#[derive(Debug, Deserialize, Clone)]
+pub struct ToolConfig {
+    /// Command to run (e.g., "mcp-filesystem").
+    pub command: String,
+
+    /// Arguments to pass to the command.
+    #[serde(default)]
+    pub args: Vec<String>,
+}
+
 fn default_provider() -> String {
     "anthropic".to_string()
 }
@@ -62,6 +77,7 @@ impl Config {
     pub fn default_config() -> Self {
         Self {
             backend: BackendConfig::default(),
+            tools: Vec::new(),
             policy: Policy::restrictive(),
         }
     }

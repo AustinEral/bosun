@@ -244,26 +244,24 @@ impl AnthropicBackend {
         let role = Self::role_to_api(msg.role);
 
         // Simple case: single text part
-        if msg.parts.len() == 1 {
-            if let Part::Text(text) = &msg.parts[0] {
-                return ApiMessage {
-                    role,
-                    content: ApiContent::Text(text.clone()),
-                };
-            }
+        if let [Part::Text(text)] = msg.parts.as_slice() {
+            return ApiMessage {
+                role,
+                content: ApiContent::Text(text.clone()),
+            };
         }
 
         // Complex case: multiple parts or non-text
         let blocks: Vec<ApiContentBlock> = msg
             .parts
             .iter()
-            .filter_map(|part| match part {
-                Part::Text(text) => Some(ApiContentBlock::Text { text: text.clone() }),
-                Part::ToolCall(call) => Some(ApiContentBlock::ToolUse {
+            .map(|part| match part {
+                Part::Text(text) => ApiContentBlock::Text { text: text.clone() },
+                Part::ToolCall(call) => ApiContentBlock::ToolUse {
                     id: call.id.clone(),
                     name: call.name.clone(),
                     input: call.input.clone(),
-                }),
+                },
                 Part::ToolResult(result) => {
                     let (tool_use_id, content, is_error) = match result {
                         ToolResult::Success {
@@ -275,11 +273,11 @@ impl AnthropicBackend {
                             error,
                         } => (tool_call_id.clone(), error.to_string(), true),
                     };
-                    Some(ApiContentBlock::ToolResult {
+                    ApiContentBlock::ToolResult {
                         tool_use_id,
                         content,
                         is_error,
-                    })
+                    }
                 }
             })
             .collect();

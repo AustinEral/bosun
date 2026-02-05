@@ -3,11 +3,13 @@
 mod empty;
 pub mod errors;
 mod mcp_client;
+mod mcp_host;
 mod r#trait;
 mod types;
 
 pub use empty::EmptyToolHost;
 pub use errors::ToolError;
 pub use mcp_client::{CallToolResult, McpClient, McpError, Tool};
+pub use mcp_host::McpToolHost;
 pub use r#trait::ToolHost;
-pub use types::{ToolCall, ToolResult, ToolSpec};
+pub use types::{ToolArguments, ToolCall, ToolResult, ToolSpec};
