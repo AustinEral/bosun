@@ -1,7 +1,6 @@
 //! Tool host trait.
 
-use crate::model::{ToolCall, ToolSpec};
-use crate::tools::ToolError;
+use super::{ToolCall, ToolError, ToolSpec};
 use serde_json::Value;
 use std::future::Future;
 

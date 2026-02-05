@@ -1,7 +1,6 @@
 //! Empty tool host implementation.
 
-use crate::model::{ToolCall, ToolSpec};
-use crate::tools::{ToolError, ToolHost};
+use super::{ToolCall, ToolError, ToolHost, ToolSpec};
 use serde_json::Value;
 
 /// A no-op tool host with no tools.

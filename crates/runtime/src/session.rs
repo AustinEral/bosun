@@ -1,7 +1,7 @@
 //! Session management.
 
-use crate::model::{Backend, Message, ModelRequest, Part, Role, ToolResult, Usage};
-use crate::tools::ToolHost;
+use crate::model::{Backend, Message, ModelRequest, Part, Role, Usage};
+use crate::tools::{EmptyToolHost, ToolCall, ToolHost, ToolResult};
 use crate::{Error, Result};
 use policy::{CapabilityRequest, Decision, Policy};
 use serde_json::json;
@@ -53,13 +53,17 @@ impl<B: Backend> Session<B> {
         }
     }
 
-    /// Chat with optional tool support.
-    pub async fn chat<H: ToolHost>(
+    /// Chat without tools.
+    pub async fn chat(&mut self, user_input: &str) -> Result<(String, Usage)> {
+        self.chat_with_tools(user_input, &EmptyToolHost).await
+    }
+
+    /// Chat with tool support.
+    pub async fn chat_with_tools<H: ToolHost>(
         &mut self,
         user_input: &str,
-        tool_host: Option<&H>,
+        tool_host: &H,
     ) -> Result<(String, Usage)> {
-        // Add user message
         self.messages.push(Message {
             role: Role::User,
             parts: vec![Part::Text(user_input.into())],
@@ -67,10 +71,9 @@ impl<B: Backend> Session<B> {
         self.log_message(StorageRole::User, user_input)?;
 
         let mut turn_usage = Usage::default();
-        let tools = tool_host.map(|h| h.specs()).unwrap_or(&[]);
+        let tools = tool_host.specs();
 
         for _ in 0..MAX_TOOL_STEPS {
-            // Call model
             let response = self
                 .backend
                 .call(ModelRequest {
@@ -92,20 +95,13 @@ impl<B: Backend> Session<B> {
                 self.log_message(StorageRole::Assistant, &text)?;
             }
 
-            // No tool calls = done
             if tool_calls.is_empty() {
                 self.usage.input_tokens += turn_usage.input_tokens;
                 self.usage.output_tokens += turn_usage.output_tokens;
                 return Ok((text, turn_usage));
             }
 
-            // Execute tools
-            let tool_host = tool_host.ok_or_else(|| {
-                Error::InvalidState("model requested tools but no tool host provided".into())
-            })?;
-
             let results = self.execute_tools(&tool_calls, tool_host).await?;
-
             self.messages.push(Message {
                 role: Role::User,
                 parts: results,
@@ -115,11 +111,7 @@ impl<B: Backend> Session<B> {
         Err(Error::InvalidState("max tool steps exceeded".into()))
     }
 
-    async fn execute_tools<H: ToolHost>(
-        &self,
-        calls: &[crate::model::ToolCall],
-        host: &H,
-    ) -> Result<Vec<Part>> {
+    async fn execute_tools<H: ToolHost>(&self, calls: &[ToolCall], host: &H) -> Result<Vec<Part>> {
         let mut results = Vec::with_capacity(calls.len());
 
         for call in calls {
