@@ -1,6 +1,7 @@
 use super::errors::ModelError;
 use crate::tools::{ToolCall, ToolResult, ToolSpec};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::future::Future;
 
 /// The role of a message sender.
@@ -9,6 +10,35 @@ pub enum Role {
     System,
     User,
     Assistant,
+}
+
+impl Role {
+    /// Returns the canonical name of this role.
+    ///
+    /// Names are lowercase, matching the convention used by LLM providers.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use runtime::Role;
+    ///
+    /// assert_eq!(Role::User.name(), "user");
+    /// assert_eq!(Role::Assistant.name(), "assistant");
+    /// assert_eq!(Role::System.name(), "system");
+    /// ```
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::System => "system",
+            Self::User => "user",
+            Self::Assistant => "assistant",
+        }
+    }
+}
+
+impl fmt::Display for Role {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.name())
+    }
 }
 
 /// A part of a message, which can be text or a tool interaction.
@@ -124,5 +154,20 @@ mod tests {
         assert_eq!(calls.len(), 2);
         assert_eq!(calls[0].name, "search");
         assert_eq!(calls[1].name, "read");
+    }
+
+    #[test]
+    fn role_name_returns_lowercase() {
+        assert_eq!(Role::User.name(), "user");
+        assert_eq!(Role::Assistant.name(), "assistant");
+        assert_eq!(Role::System.name(), "system");
+    }
+
+    #[test]
+    fn role_display_uses_name() {
+        // Verify Display produces the same output as name()
+        for role in [Role::User, Role::Assistant, Role::System] {
+            assert_eq!(role.to_string(), role.name());
+        }
     }
 }
