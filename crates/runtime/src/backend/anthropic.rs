@@ -1,6 +1,9 @@
 //! Anthropic API backend.
 
-use super::{ChatRequest, ChatResponse, ContentBlock, LlmBackend, StopReason, ToolDef, Usage};
+use super::{
+    ChatRequest, ChatResponse, ContentBlock, LlmBackend, StopReason, ToolChoice, ToolDef,
+    ToolResultContent, Usage,
+};
 use crate::{Error, Result};
 use reqwest::RequestBuilder;
 use serde::{Deserialize, Serialize};
@@ -91,6 +94,8 @@ struct ApiRequest {
     system: Option<SystemPrompt>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     tools: Vec<ApiTool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_choice: Option<ApiToolChoice>,
 }
 
 #[derive(Debug, Serialize)]
@@ -142,10 +147,35 @@ enum ApiContentBlock {
     },
     ToolResult {
         tool_use_id: String,
-        content: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        content: Option<ApiToolResultContent>,
         #[serde(skip_serializing_if = "std::ops::Not::not")]
         is_error: bool,
     },
+}
+
+/// Tool result content for API.
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum ApiToolResultContent {
+    Text(String),
+    Blocks(Vec<ApiToolResultBlock>),
+}
+
+/// Tool result block types.
+#[derive(Debug, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum ApiToolResultBlock {
+    Text { text: String },
+    Image { source: ApiImageSource },
+}
+
+#[derive(Debug, Serialize)]
+struct ApiImageSource {
+    #[serde(rename = "type")]
+    source_type: String,
+    media_type: String,
+    data: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -165,6 +195,44 @@ impl From<&ToolDef> for ApiTool {
     }
 }
 
+/// Tool choice for API.
+#[derive(Debug, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum ApiToolChoice {
+    Auto {
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        disable_parallel_tool_use: bool,
+    },
+    Any {
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        disable_parallel_tool_use: bool,
+    },
+    Tool {
+        name: String,
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        disable_parallel_tool_use: bool,
+    },
+    None,
+}
+
+impl ApiToolChoice {
+    fn from_choice(choice: &ToolChoice, disable_parallel: bool) -> Self {
+        match choice {
+            ToolChoice::Auto => Self::Auto {
+                disable_parallel_tool_use: disable_parallel,
+            },
+            ToolChoice::Any => Self::Any {
+                disable_parallel_tool_use: disable_parallel,
+            },
+            ToolChoice::Tool { name } => Self::Tool {
+                name: name.clone(),
+                disable_parallel_tool_use: disable_parallel,
+            },
+            ToolChoice::None => Self::None,
+        }
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // API Response Types
 // ─────────────────────────────────────────────────────────────────────────────
@@ -177,6 +245,7 @@ struct ApiResponse {
 }
 
 /// Content block from API response.
+/// Using untagged to be tolerant of unknown block types.
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum ApiResponseBlock {
@@ -188,15 +257,25 @@ enum ApiResponseBlock {
         name: String,
         input: serde_json::Value,
     },
+    /// Thinking blocks (from extended thinking beta).
+    #[serde(rename = "thinking")]
+    #[allow(dead_code)]
+    Thinking {
+        #[serde(default)]
+        thinking: String,
+    },
+    /// Catch-all for unknown block types (forward compatibility).
+    #[serde(other)]
+    Unknown,
 }
 
-impl From<ApiResponseBlock> for ContentBlock {
-    fn from(block: ApiResponseBlock) -> Self {
-        match block {
-            ApiResponseBlock::Text { text } => ContentBlock::Text { text },
-            ApiResponseBlock::ToolUse { id, name, input } => {
-                ContentBlock::ToolUse { id, name, input }
-            }
+impl ApiResponseBlock {
+    fn into_content_block(self) -> Option<ContentBlock> {
+        match self {
+            Self::Text { text } => Some(ContentBlock::Text { text }),
+            Self::ToolUse { id, name, input } => Some(ContentBlock::ToolUse { id, name, input }),
+            // Skip thinking and unknown blocks
+            Self::Thinking { .. } | Self::Unknown => None,
         }
     }
 }
@@ -261,6 +340,36 @@ impl AnthropicBackend {
         }
     }
 
+    /// Convert ToolResultContent to API format.
+    fn tool_result_content_to_api(content: &ToolResultContent) -> Option<ApiToolResultContent> {
+        match content {
+            ToolResultContent::Text(s) if s.is_empty() => None,
+            ToolResultContent::Text(s) => Some(ApiToolResultContent::Text(s.clone())),
+            ToolResultContent::Blocks(blocks) => {
+                let api_blocks: Vec<ApiToolResultBlock> = blocks
+                    .iter()
+                    .map(|b| match b {
+                        super::ToolResultBlock::Text { text } => {
+                            ApiToolResultBlock::Text { text: text.clone() }
+                        }
+                        super::ToolResultBlock::Image { source } => ApiToolResultBlock::Image {
+                            source: ApiImageSource {
+                                source_type: source.source_type.clone(),
+                                media_type: source.media_type.clone(),
+                                data: source.data.clone(),
+                            },
+                        },
+                    })
+                    .collect();
+                if api_blocks.is_empty() {
+                    None
+                } else {
+                    Some(ApiToolResultContent::Blocks(api_blocks))
+                }
+            }
+        }
+    }
+
     /// Convert our Message to API format.
     fn message_to_api(msg: &super::Message) -> ApiMessage {
         let role = Self::role_to_api_str(msg.role);
@@ -292,7 +401,7 @@ impl AnthropicBackend {
                     is_error,
                 } => ApiContentBlock::ToolResult {
                     tool_use_id: tool_use_id.clone(),
-                    content: content.clone(),
+                    content: Self::tool_result_content_to_api(content),
                     is_error: *is_error,
                 },
             })
@@ -320,7 +429,21 @@ impl LlmBackend for AnthropicBackend {
             .map(Self::message_to_api)
             .collect();
 
-        let tools: Vec<ApiTool> = request.tools.iter().map(ApiTool::from).collect();
+        // Build tools and tool_choice from config
+        let (tools, tool_choice) = if let Some(ref config) = request.tool_config {
+            let tools: Vec<ApiTool> = config.tools.iter().map(ApiTool::from).collect();
+            let choice = if tools.is_empty() {
+                None
+            } else {
+                Some(ApiToolChoice::from_choice(
+                    &config.tool_choice,
+                    config.disable_parallel_tool_use,
+                ))
+            };
+            (tools, choice)
+        } else {
+            (vec![], None)
+        };
 
         let api_request = ApiRequest {
             model: self.model.clone(),
@@ -328,6 +451,7 @@ impl LlmBackend for AnthropicBackend {
             messages: api_messages,
             system: self.auth.build_system(request.system),
             tools,
+            tool_choice,
         };
 
         let req = self
@@ -362,10 +486,11 @@ impl LlmBackend for AnthropicBackend {
             .map(StopReason::from_anthropic)
             .unwrap_or_default();
 
+        // Filter out unknown/thinking blocks
         let content: Vec<ContentBlock> = api_response
             .content
             .into_iter()
-            .map(ContentBlock::from)
+            .filter_map(|b| b.into_content_block())
             .collect();
 
         Ok(ChatResponse {
@@ -400,7 +525,14 @@ mod tests {
             StopReason::from_anthropic("stop_sequence"),
             StopReason::StopSequence
         );
-        assert_eq!(StopReason::from_anthropic("unknown"), StopReason::EndTurn);
+        assert_eq!(
+            StopReason::from_anthropic("model_context_window_exceeded"),
+            StopReason::ModelContextWindowExceeded
+        );
+        assert_eq!(
+            StopReason::from_anthropic("something_new"),
+            StopReason::Unknown("something_new".to_string())
+        );
     }
 
     #[test]
@@ -414,5 +546,14 @@ mod tests {
         let call = tool.as_tool_use().unwrap();
         assert_eq!(call.name, "my_tool");
         assert_eq!(call.id, "id1");
+    }
+
+    #[test]
+    fn tool_result_content_conversion() {
+        let text = ToolResultContent::text("hello");
+        assert_eq!(text.as_text(), "hello");
+
+        let from_str: ToolResultContent = "world".into();
+        assert_eq!(from_str.as_text(), "world");
     }
 }

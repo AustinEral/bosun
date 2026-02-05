@@ -48,7 +48,8 @@ mod session;
 // LLM backend types
 pub use backend::{
     AnthropicAuth, AnthropicBackend, ChatRequest, ChatResponse, ContentBlock, LlmBackend, Message,
-    StopReason, ToolCall, ToolDef, ToolResult, Usage,
+    StopReason, ToolCall, ToolChoice, ToolConfig, ToolDef, ToolResult, ToolResultBlock,
+    ToolResultContent, Usage,
 };
 
 // Error types
