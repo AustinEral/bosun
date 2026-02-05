@@ -1,6 +1,8 @@
 //! CLI error types.
 
 use std::path::PathBuf;
+
+use crate::config::ConfigError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -17,8 +19,8 @@ pub enum Error {
         matches: Vec<String>,
     },
 
-    #[error("config error: {0}")]
-    Config(String),
+    #[error(transparent)]
+    Config(#[from] ConfigError),
 
     #[error("tool error: {0}")]
     Tool(String),

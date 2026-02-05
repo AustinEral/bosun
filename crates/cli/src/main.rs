@@ -72,7 +72,7 @@ async fn cmd_chat() -> Result<()> {
     let config = load_config()?;
 
     // Get authentication (from config or env)
-    let auth = config.auth().map_err(|e| Error::Config(e.to_string()))?;
+    let auth = config.auth()?;
 
     // Initialize LLM backend
     let backend = AnthropicBackend::builder(auth, &config.backend.model)
@@ -284,7 +284,7 @@ fn load_config() -> Result<Config> {
     let config_path = PathBuf::from(CONFIG_FILE);
 
     if config_path.exists() {
-        Config::load(&config_path).map_err(|e| Error::Config(e.to_string()))
+        Ok(Config::load(&config_path)?)
     } else {
         Ok(Config::default_config())
     }
