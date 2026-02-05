@@ -17,18 +17,14 @@ pub use error::{Error, Result};
 // Session management
 pub use session::Session;
 
-// Provider exports (legacy API)
-pub use providers::{
-    AnthropicAuth, AnthropicBackend, ChatRequest, ChatResponse, LlmBackend, Message, Usage,
-};
+// Provider exports
+pub use providers::{AnthropicAuth, AnthropicBackend, AnthropicBackendBuilder};
 
-// New LLM protocol types
+// Model protocol types
 pub use model::{
-    Backend, ModelError, ModelRequest, ModelResponse, Part, Role, ToolCall, ToolResult,
+    Backend, Message, ModelError, ModelRequest, ModelResponse, Part, Role, ToolCall, ToolResult,
+    ToolSpec, Usage,
 };
 
 // Tool types
-pub use tools::{CallToolResult, McpClient, McpError, Tool, ToolError};
-
-// Re-export ToolSpec from model
-pub use model::ToolSpec;
+pub use tools::{CallToolResult, EmptyToolHost, McpClient, McpError, Tool, ToolError, ToolHost};

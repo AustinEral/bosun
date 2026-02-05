@@ -1,10 +1,12 @@
 //! Anthropic API backend.
 
-use super::{ChatRequest, ChatResponse, LlmBackend, Usage};
-use crate::{Error, Result};
+use crate::model::{
+    Backend, Message, ModelError, ModelRequest, ModelResponse, Part, Role, ToolCall, ToolResult,
+    ToolSpec, Usage,
+};
 use reqwest::RequestBuilder;
 use serde::{Deserialize, Serialize};
-use storage::Role;
+use serde_json::Value;
 
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
 
@@ -14,9 +16,6 @@ const OAUTH_BETA_HEADER: &str = "claude-code-20250219,oauth-2025-04-20,fine-grai
 const OAUTH_SYSTEM_PREFIX: &str = "You are Claude Code, Anthropic's official CLI for Claude.";
 
 /// Authentication mode for Anthropic API.
-///
-/// Use `ApiKey` for standard API keys (`sk-ant-api01-...`).
-/// Use `ClaudeCodeOauth` for OAuth tokens from Claude Code CLI (`sk-ant-oat-...`).
 #[derive(Debug, Clone)]
 pub enum AnthropicAuth {
     /// Standard API key authentication.
@@ -35,7 +34,6 @@ impl std::fmt::Display for AnthropicAuth {
 }
 
 impl AnthropicAuth {
-    /// Apply authentication headers to a request.
     fn apply_headers(&self, req: RequestBuilder) -> RequestBuilder {
         match self {
             Self::ApiKey(key) => req.header("x-api-key", key),
@@ -51,32 +49,35 @@ impl AnthropicAuth {
         }
     }
 
-    /// Build the system prompt in the appropriate format.
-    fn build_system(&self, system: Option<&str>) -> Option<SystemPrompt> {
+    fn build_system(&self, system: Option<&str>) -> Option<ApiSystemPrompt> {
         match self {
-            Self::ApiKey(_) => system.map(|s| SystemPrompt::Simple(s.to_string())),
+            Self::ApiKey(_) => system.map(|s| ApiSystemPrompt::Simple(s.to_string())),
             Self::ClaudeCodeOauth(_) => {
-                let mut blocks = vec![SystemBlock {
+                let mut blocks = vec![ApiSystemBlock {
                     block_type: "text",
                     text: OAUTH_SYSTEM_PREFIX.to_string(),
-                    cache_control: CacheControl {
+                    cache_control: ApiCacheControl {
                         control_type: "ephemeral",
                     },
                 }];
                 if let Some(s) = system {
-                    blocks.push(SystemBlock {
+                    blocks.push(ApiSystemBlock {
                         block_type: "text",
                         text: s.to_string(),
-                        cache_control: CacheControl {
+                        cache_control: ApiCacheControl {
                             control_type: "ephemeral",
                         },
                     });
                 }
-                Some(SystemPrompt::Blocks(blocks))
+                Some(ApiSystemPrompt::Blocks(blocks))
             }
         }
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// API Wire Types
+// ─────────────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize)]
 struct ApiRequest {
@@ -84,26 +85,28 @@ struct ApiRequest {
     max_tokens: u32,
     messages: Vec<ApiMessage>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    system: Option<SystemPrompt>,
+    system: Option<ApiSystemPrompt>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    tools: Vec<ApiTool>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
-enum SystemPrompt {
+enum ApiSystemPrompt {
     Simple(String),
-    Blocks(Vec<SystemBlock>),
+    Blocks(Vec<ApiSystemBlock>),
 }
 
 #[derive(Debug, Serialize)]
-struct SystemBlock {
+struct ApiSystemBlock {
     #[serde(rename = "type")]
     block_type: &'static str,
     text: String,
-    cache_control: CacheControl,
+    cache_control: ApiCacheControl,
 }
 
 #[derive(Debug, Serialize)]
-struct CacheControl {
+struct ApiCacheControl {
     #[serde(rename = "type")]
     control_type: &'static str,
 }
@@ -111,19 +114,72 @@ struct CacheControl {
 #[derive(Debug, Serialize)]
 struct ApiMessage {
     role: &'static str,
-    content: String,
+    content: ApiContent,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum ApiContent {
+    Text(String),
+    Blocks(Vec<ApiContentBlock>),
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum ApiContentBlock {
+    Text {
+        text: String,
+    },
+    ToolUse {
+        id: String,
+        name: String,
+        input: Value,
+    },
+    ToolResult {
+        tool_use_id: String,
+        content: String,
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        is_error: bool,
+    },
+}
+
+#[derive(Debug, Serialize)]
+struct ApiTool {
+    name: String,
+    description: String,
+    input_schema: Value,
 }
 
 #[derive(Debug, Deserialize)]
 struct ApiResponse {
-    content: Vec<ContentBlock>,
-    usage: Usage,
+    content: Vec<ApiResponseBlock>,
+    usage: ApiUsage,
 }
 
 #[derive(Debug, Deserialize)]
-struct ContentBlock {
-    text: String,
+#[serde(tag = "type", rename_all = "snake_case")]
+enum ApiResponseBlock {
+    Text {
+        text: String,
+    },
+    ToolUse {
+        id: String,
+        name: String,
+        input: Value,
+    },
+    #[serde(other)]
+    Unknown,
 }
+
+#[derive(Debug, Deserialize)]
+struct ApiUsage {
+    input_tokens: u32,
+    output_tokens: u32,
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Backend Implementation
+// ─────────────────────────────────────────────────────────────────────────────
 
 /// Builder for creating an Anthropic backend.
 #[derive(Debug, Clone)]
@@ -131,31 +187,36 @@ pub struct AnthropicBackendBuilder {
     auth: AnthropicAuth,
     model: String,
     max_tokens: u32,
+    system: Option<String>,
 }
 
 impl AnthropicBackendBuilder {
-    /// Create a new builder with authentication and model.
     pub fn new(auth: AnthropicAuth, model: impl Into<String>) -> Self {
         Self {
             auth,
             model: model.into(),
             max_tokens: 4096,
+            system: None,
         }
     }
 
-    /// Set the maximum tokens for responses.
     pub fn max_tokens(mut self, max_tokens: u32) -> Self {
         self.max_tokens = max_tokens;
         self
     }
 
-    /// Build the backend.
+    pub fn system(mut self, system: impl Into<String>) -> Self {
+        self.system = Some(system.into());
+        self
+    }
+
     pub fn build(self) -> AnthropicBackend {
         AnthropicBackend {
             client: reqwest::Client::new(),
             auth: self.auth,
             model: self.model,
             max_tokens: self.max_tokens,
+            system: self.system,
         }
     }
 }
@@ -166,18 +227,94 @@ pub struct AnthropicBackend {
     auth: AnthropicAuth,
     model: String,
     max_tokens: u32,
+    system: Option<String>,
 }
 
 impl AnthropicBackend {
-    /// Create a builder for the Anthropic backend.
     pub fn builder(auth: AnthropicAuth, model: impl Into<String>) -> AnthropicBackendBuilder {
         AnthropicBackendBuilder::new(auth, model)
     }
 
-    fn role_to_api_str(role: Role) -> &'static str {
+    fn role_to_api(role: Role) -> &'static str {
         match role {
             Role::User | Role::System => "user",
             Role::Assistant => "assistant",
+        }
+    }
+
+    fn message_to_api(msg: &Message) -> ApiMessage {
+        let role = Self::role_to_api(msg.role);
+
+        // Simple case: single text part
+        if msg.parts.len() == 1 {
+            if let Part::Text(text) = &msg.parts[0] {
+                return ApiMessage {
+                    role,
+                    content: ApiContent::Text(text.clone()),
+                };
+            }
+        }
+
+        // Complex case: multiple parts or non-text
+        let blocks: Vec<ApiContentBlock> = msg
+            .parts
+            .iter()
+            .filter_map(|part| match part {
+                Part::Text(text) => Some(ApiContentBlock::Text { text: text.clone() }),
+                Part::ToolCall(call) => Some(ApiContentBlock::ToolUse {
+                    id: call.id.clone(),
+                    name: call.name.clone(),
+                    input: call.input.clone(),
+                }),
+                Part::ToolResult(result) => {
+                    let (tool_use_id, content, is_error) = match result {
+                        ToolResult::Success {
+                            tool_call_id,
+                            output,
+                        } => (tool_call_id.clone(), output.to_string(), false),
+                        ToolResult::Failure {
+                            tool_call_id,
+                            error,
+                        } => (tool_call_id.clone(), error.to_string(), true),
+                    };
+                    Some(ApiContentBlock::ToolResult {
+                        tool_use_id,
+                        content,
+                        is_error,
+                    })
+                }
+            })
+            .collect();
+
+        ApiMessage {
+            role,
+            content: ApiContent::Blocks(blocks),
+        }
+    }
+
+    fn tool_to_api(spec: &ToolSpec) -> ApiTool {
+        ApiTool {
+            name: spec.name.clone(),
+            description: spec.description.clone(),
+            input_schema: spec.schema.clone(),
+        }
+    }
+
+    fn response_to_message(blocks: Vec<ApiResponseBlock>) -> Message {
+        let parts: Vec<Part> = blocks
+            .into_iter()
+            .filter_map(|block| match block {
+                ApiResponseBlock::Text { text } => Some(Part::Text(text)),
+                ApiResponseBlock::ToolUse { id, name, input } => {
+                    Some(Part::ToolCall(ToolCall { id, name, input }))
+                }
+                ApiResponseBlock::Unknown => None,
+            })
+            .collect();
+
+        Message {
+            role: Role::Assistant,
+            parts,
         }
     }
 }
@@ -188,23 +325,23 @@ impl std::fmt::Display for AnthropicBackend {
     }
 }
 
-impl LlmBackend for AnthropicBackend {
-    async fn chat(&self, request: ChatRequest<'_>) -> Result<ChatResponse> {
+impl Backend for AnthropicBackend {
+    async fn call(&self, request: ModelRequest<'_>) -> Result<ModelResponse, ModelError> {
         let api_messages: Vec<ApiMessage> = request
             .messages
             .iter()
             .filter(|m| m.role != Role::System)
-            .map(|m| ApiMessage {
-                role: Self::role_to_api_str(m.role),
-                content: m.content.clone(),
-            })
+            .map(Self::message_to_api)
             .collect();
+
+        let tools: Vec<ApiTool> = request.tools.iter().map(Self::tool_to_api).collect();
 
         let api_request = ApiRequest {
             model: self.model.clone(),
             max_tokens: self.max_tokens,
             messages: api_messages,
-            system: self.auth.build_system(request.system),
+            system: self.auth.build_system(self.system.as_deref()),
+            tools,
         };
 
         let req = self
@@ -220,30 +357,26 @@ impl LlmBackend for AnthropicBackend {
             .json(&api_request)
             .send()
             .await
-            .map_err(|e| Error::Network(e.to_string()))?;
+            .map_err(|e| ModelError::Network(e.to_string()))?;
 
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
-            return Err(Error::Api(format!("{status}: {body}")));
+            return Err(ModelError::Api(format!("{status}: {body}")));
         }
 
         let api_response: ApiResponse = response
             .json()
             .await
-            .map_err(|e| Error::Api(e.to_string()))?;
+            .map_err(|e| ModelError::InvalidResponse(e.to_string()))?;
 
-        let content = api_response
-            .content
-            .into_iter()
-            .map(|b| b.text)
-            .collect::<Vec<_>>()
-            .join("");
+        let message = Self::response_to_message(api_response.content);
+        let usage = Usage {
+            input_tokens: api_response.usage.input_tokens,
+            output_tokens: api_response.usage.output_tokens,
+        };
 
-        Ok(ChatResponse {
-            content,
-            usage: api_response.usage,
-        })
+        Ok(ModelResponse { message, usage })
     }
 }
 
