@@ -79,9 +79,8 @@ impl<B: LlmBackend> Session<B> {
         self.store
             .append(&Event::message(self.id, Role::Assistant, &response.content))?;
 
-        // Track cumulative usage
-        self.usage.input_tokens += response.usage.input_tokens;
-        self.usage.output_tokens += response.usage.output_tokens;
+        // Accumulate usage with idiomatic += operator
+        self.usage += response.usage;
 
         Ok((response.content, response.usage))
     }
