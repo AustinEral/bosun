@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
-const ANTHROPIC_API_URL_BETA: &str = "https://api.anthropic.com/v1/messages?beta=true";
 
 // Claude Code OAuth constants
 const CLAUDE_CODE_VERSION: &str = "2.1.2";
@@ -33,13 +32,6 @@ impl std::fmt::Display for AnthropicAuth {
 }
 
 impl AnthropicAuth {
-    fn api_url(&self) -> &'static str {
-        match self {
-            Self::ApiKey(_) => ANTHROPIC_API_URL,
-            Self::ClaudeCodeOauth(_) => ANTHROPIC_API_URL_BETA,
-        }
-    }
-
     fn apply_headers(&self, req: RequestBuilder) -> RequestBuilder {
         match self {
             Self::ApiKey(key) => req.header("x-api-key", key),
@@ -350,7 +342,7 @@ impl Backend for AnthropicBackend {
 
         let req = self
             .client
-            .post(self.auth.api_url())
+            .post(ANTHROPIC_API_URL)
             .header("anthropic-version", "2023-06-01")
             .header("content-type", "application/json")
             .header("accept", "application/json");
