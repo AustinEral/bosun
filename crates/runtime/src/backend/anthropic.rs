@@ -276,14 +276,4 @@ mod tests {
         assert_eq!(usage.total_tokens(), 150);
     }
 
-    #[test]
-    fn usage_cost_calculation() {
-        let usage = Usage {
-            input_tokens: 1_000_000, // 1M input tokens
-            output_tokens: 500_000,  // 500K output tokens
-        };
-        // At $3/MTok input and $15/MTok output (Sonnet pricing)
-        let cost = usage.cost_usd(3.0, 15.0);
-        assert!((cost - 10.5).abs() < 0.001); // $3 + $7.50 = $10.50
-    }
 }

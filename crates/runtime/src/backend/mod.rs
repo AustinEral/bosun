@@ -62,15 +62,6 @@ impl Usage {
     pub fn total_tokens(self) -> u32 {
         self.input_tokens + self.output_tokens
     }
-
-    /// Calculate cost in USD based on per-token pricing.
-    ///
-    /// Prices are per million tokens.
-    pub fn cost_usd(self, input_price_per_mtok: f64, output_price_per_mtok: f64) -> f64 {
-        let input_cost = (self.input_tokens as f64 / 1_000_000.0) * input_price_per_mtok;
-        let output_cost = (self.output_tokens as f64 / 1_000_000.0) * output_price_per_mtok;
-        input_cost + output_cost
-    }
 }
 
 /// Response from an LLM backend.

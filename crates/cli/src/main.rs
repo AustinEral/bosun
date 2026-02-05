@@ -16,22 +16,6 @@ const SYSTEM_PROMPT: &str = "You are Bosun, a helpful AI assistant. Be concise a
 const CONFIG_FILE: &str = "bosun.toml";
 const APP_NAME: &str = "bosun";
 
-/// Pricing per million tokens for Anthropic models.
-/// Returns (input_price, output_price) in USD per million tokens.
-fn model_pricing(model: &str) -> (f64, f64) {
-    // Claude 4 pricing (as of 2025)
-    if model.contains("opus") {
-        (15.0, 75.0) // Opus: $15/MTok input, $75/MTok output
-    } else if model.contains("sonnet") {
-        (3.0, 15.0) // Sonnet: $3/MTok input, $15/MTok output
-    } else if model.contains("haiku") {
-        (0.25, 1.25) // Haiku: $0.25/MTok input, $1.25/MTok output
-    } else {
-        // Default to Sonnet pricing for unknown models
-        (3.0, 15.0)
-    }
-}
-
 #[derive(Parser)]
 #[command(name = "bosun")]
 #[command(about = "A local-first AI agent runtime", long_about = None)]
@@ -98,9 +82,6 @@ async fn cmd_chat() -> Result<()> {
     let db_path = data_dir.join("events.db");
     let store = EventStore::open(&db_path)?;
 
-    // Get model pricing
-    let (input_price, output_price) = model_pricing(&config.backend.model);
-
     println!("Session stored at: {}", db_path.display());
     println!(
         "Config: {}",
@@ -142,7 +123,7 @@ async fn cmd_chat() -> Result<()> {
         match session.chat(input).await {
             Ok((response, usage)) => {
                 println!("\n{response}");
-                print_usage(&usage, input_price, output_price);
+                print_usage(&usage);
                 println!();
             }
             Err(e) => {
@@ -160,22 +141,18 @@ async fn cmd_chat() -> Result<()> {
         total.input_tokens,
         total.output_tokens
     );
-    let total_cost = total.cost_usd(input_price, output_price);
-    println!("Estimated cost: ${total_cost:.6}");
 
     session.end()?;
     println!("Session ended.");
     Ok(())
 }
 
-fn print_usage(usage: &Usage, input_price: f64, output_price: f64) {
-    let cost = usage.cost_usd(input_price, output_price);
+fn print_usage(usage: &Usage) {
     println!(
-        "[tokens: {} in + {} out = {} | ${:.6}]",
+        "[tokens: {} in + {} out = {}]",
         usage.input_tokens,
         usage.output_tokens,
         usage.total_tokens(),
-        cost
     );
 }
 
@@ -312,7 +289,7 @@ fn open_store() -> Result<EventStore> {
 /// Returns the platform-appropriate data directory for Bosun.
 ///
 /// Uses the standard locations for each platform:
-/// - Linux: $XDG_DATA_HOME/bosun or ~/.local/share/bosun
+/// - Linux: \$XDG_DATA_HOME/bosun or ~/.local/share/bosun
 /// - macOS: ~/Library/Application Support/bosun
 /// - Windows: {FOLDERID_RoamingAppData}/bosun (typically C:\Users\<User>\AppData\Roaming\bosun)
 ///
