@@ -7,7 +7,7 @@
 mod error;
 mod session;
 
-pub mod llm;
+pub mod model;
 pub mod providers;
 pub mod tools;
 
@@ -23,10 +23,12 @@ pub use providers::{
 };
 
 // New LLM protocol types
-pub use llm::{Backend, ModelError, ModelRequest, ModelResponse, Part, Role, ToolCall, ToolResult};
+pub use model::{
+    Backend, ModelError, ModelRequest, ModelResponse, Part, Role, ToolCall, ToolResult,
+};
 
 // Tool types
 pub use tools::{CallToolResult, McpClient, McpError, Tool, ToolError};
 
-// Re-export ToolSpec from llm
-pub use llm::ToolSpec;
+// Re-export ToolSpec from model
+pub use model::ToolSpec;
