@@ -35,10 +35,15 @@
 
 mod backend;
 mod error;
+pub mod llm;
 mod mcp;
 mod session;
 
-// LLM backend types
+// LLM core types (provider-agnostic)
+// Full module available as `llm::` for types that overlap with current backend
+pub use llm::{FinishReason, Part, ToolCall, ToolChoice, ToolResult, ToolSpec};
+
+// LLM backend types (current, to be migrated)
 pub use backend::{
     AnthropicAuth, AnthropicBackend, ChatRequest, ChatResponse, LlmBackend, Message, Usage,
 };
