@@ -85,7 +85,7 @@ async fn cmd_chat() -> Result<()> {
 
     // Create session
     let mut session = Session::new(store, backend, config.policy)?.with_system(SYSTEM_PROMPT);
-    
+
     println!("  Model:   {}", config.backend.model);
     println!("  Session: {}", session.id);
     println!();
@@ -135,7 +135,10 @@ async fn cmd_chat() -> Result<()> {
     println!();
     println!("─────────────────────────────────────────");
     println!("  Session complete");
-    println!("  Tokens: {} in → {} out", total.input_tokens, total.output_tokens);
+    println!(
+        "  Tokens: {} in → {} out",
+        total.input_tokens, total.output_tokens
+    );
     println!("─────────────────────────────────────────");
 
     session.end()?;

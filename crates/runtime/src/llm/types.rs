@@ -1,4 +1,5 @@
-use crate::errors::{ModelError, ToolError};
+use super::errors::ModelError;
+use crate::tools::ToolError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::future::Future;
